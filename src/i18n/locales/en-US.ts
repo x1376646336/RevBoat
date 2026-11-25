@@ -1,4 +1,6 @@
 export default {
+  accountUi: {"title": "SVN account", "currentAccount": "Current account", "notConfigured": "Not configured in this app", "selectWorkspace": "Select a workspace using HTTP(S) or SVN first.", "scopeHint": "Used by workspaces on this server without an explicit account. Failed verification keeps the existing account.", "edit": "Change account / password", "verifySave": "Verify connection and save", "pinnedAccount": "The repository URL specifies an account. Check out a new working copy to use a different account.", "updated": "Account updated. Subsequent operations will use this account.", "backToHistory": "Back to history", "binaryDiff": "This is a binary file. SVN cannot produce a line-by-line text diff. Word, Excel and PDF files need a document comparison tool."},
+  svnAuth: {"keychainHint": "After signing in, credentials are saved in macOS Keychain for automatic sign-in. You will be asked again if the password stops working.", "saveFailed": "Signed in, but credentials could not be saved to Keychain. You may need to sign in again after restarting.", "title": "SVN authentication", "username": "Username", "password": "Password", "retry": "Sign in and retry", "sessionHint": "Credentials stay in memory for this session only."},
   nav: {
     home: 'Home',
     settings: 'Settings',
@@ -63,7 +65,7 @@ export default {
     themeLight: 'Light',
     themeDark: 'Dark',
     themeAuto: 'Auto',
-    aboutSubtitle: 'SVN Workbench',
+    aboutSubtitle: 'SVN desktop client · Every change leaves a trace.',
   },
   workspacePanel: {
     tabAll: "All",
@@ -102,7 +104,7 @@ export default {
     title: 'Workspace',
     emptyWorkspace: 'No Workspace',
     emptyDescription: 'Open an existing SVN working copy or check out a new one.',
-    welcomeTitle: 'Welcome to OrcaSVN',
+    welcomeTitle: 'Welcome to RevBoat',
     welcomeRepository: 'Welcome',
     svnClient: 'Subversion client',
     workingCopy: 'Working Copy',
@@ -373,6 +375,7 @@ export default {
     terminal: 'Terminal',
   },
   appUpdate: {
+    localBuild: 'Custom build · Update using a new installer',
     available: 'Update available: v{version}',
     check: 'Check for updates',
     checking: 'Checking…',

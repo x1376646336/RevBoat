@@ -32,7 +32,7 @@
               </el-tag>
               <el-button size="small" @click="backToCommit">
                 <el-icon><Back /></el-icon>
-                {{ $t('diff.backToCommit') }}
+                {{ $t(diffSource === 'log' ? 'accountUi.backToHistory' : 'diff.backToCommit') }}
               </el-button>
             </template>
             <template v-else>
@@ -49,11 +49,11 @@
                   <el-button @click="browseFile">{{ $t('common.browse') }}</el-button>
                 </template>
               </el-input>
-              <el-button @click="loadDiff" :loading="loading" type="primary">
-                <el-icon><Connection /></el-icon>
-                {{ $t('diff.compare') }}
-              </el-button>
+
             </template>
+            <el-button class="run-diff" @click="loadDiff" :loading="loading" :disabled="!workspaceStore.currentPath || !currentPath" type="primary">
+              <el-icon><Connection /></el-icon>{{ $t('diff.compare') }}
+            </el-button>
           </div>
         </div>
       </template>
@@ -89,7 +89,7 @@
         <div class="diff-main">
           <div class="diff-options">
             <el-radio-group v-model="diffType" class="mode-switch" @change="handleDiffTypeChange">
-              <el-radio-button label="working">{{ $t('diff.workingCopy') }}</el-radio-button>
+              <el-radio-button label="working" :disabled="remoteTarget">{{ $t('diff.workingCopy') }}</el-radio-button>
               <el-radio-button label="revision">{{ $t('diff.betweenRevisions') }}</el-radio-button>
               <el-radio-button v-if="changeRev" label="change">
                 {{ $t('diff.changeRevision', { revision: changeRev }) }}
@@ -115,7 +115,8 @@
             </div>
           </div>
 
-          <div v-if="!diffResult && !loading" class="empty-diff">
+          <div v-if="diffError && !loading" class="diff-error" role="alert">{{ diffError }}</div>
+          <div v-else-if="!diffResult && !loading" class="empty-diff">
             <el-empty :description="$t('diff.selectFileAndCompare')">
               <template #image>
                 <el-icon class="empty-icon"><Connection /></el-icon>
@@ -134,7 +135,7 @@
                   <el-icon><Document /></el-icon>
                   <span class="path-label" :title="diffResult?.path">{{ $t('diff.file') }}: {{ diffResult?.path }}</span>
                 </el-tag>
-                <el-tag v-if="diffResult?.old_revision && diffResult?.new_revision" type="info">
+                <el-tag v-if="diffType !== 'working'" type="info">
                   {{ $t('common.version') }}：{{ diffResult?.old_revision }} → {{ diffResult?.new_revision }}
                 </el-tag>
               </div>
@@ -150,7 +151,8 @@
               </div>
             </div>
 
-            <DiffViewer :text="diffResult?.diff || ''" @stats="diffStats = $event" />
+            <p v-if="!diffResult?.diff.trim()" class="empty-result" role="status">{{ $t('diff.noDiff') }}</p>
+            <DiffViewer v-else :text="diffResult?.diff || ''" @stats="diffStats = $event" />
           </div>
         </div>
       </div>
@@ -159,10 +161,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus/es/components/message/index'
+import { isRepositoryDiffTarget } from '@/utils/diffTarget'
 import { svnDiff } from '@/api/svn'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18n } from 'vue-i18n'
@@ -186,6 +189,8 @@ const newRev = ref<number>()
 const changeRev = ref<number>()
 const loading = ref(false)
 const diffResult = ref<DiffResult | null>(null)
+const diffError = ref('')
+const remoteTarget = computed(() => isRepositoryDiffTarget(currentPath.value))
 let requestGeneration = 0
 
 const fileList = ref<string[]>([])
@@ -210,6 +215,7 @@ const resolveCurrentFilePath = (): string | null => {
   const file = currentPath.value || route.query.path as string
   if (!file || !workspaceStore.currentPath) return null
 
+  if (isRepositoryDiffTarget(file)) return file
   const relativePath = toWorkspaceRelativePath(file, workspaceStore.currentPath)
   if (relativePath === null) {
     ElMessage.warning(t('diff.fileOutsideWorkspace'))
@@ -249,6 +255,8 @@ const loadDiff = async () => {
   const generation = ++requestGeneration
   loading.value = true
   diffResult.value = null
+  diffError.value = ''
+  diffStats.value = { added: 0, removed: 0 }
 
   try {
     if (diffType.value === 'revision' && (oldRev.value === undefined || newRev.value === undefined)) {
@@ -262,7 +270,7 @@ const loadDiff = async () => {
       ElMessage.warning(t('diff.invalidRevision'))
       return
     }
-    const old = diffType.value === 'revision' ? oldRev.value : changeRev.value
+    const old = diffType.value === 'revision' ? oldRev.value : diffType.value === 'change' ? changeRev.value : undefined
     const new_ = diffType.value === 'revision' ? newRev.value : undefined
 
     const result = await svnDiff(workspaceStore.currentPath, file, old, new_)
@@ -270,7 +278,7 @@ const loadDiff = async () => {
   } catch (err) {
     if (generation === requestGeneration) {
       diffResult.value = null
-      ElMessage.error(`${t('common.error')}：${err}`)
+      diffError.value = String(err)
     }
   } finally {
     if (generation === requestGeneration) loading.value = false
@@ -278,7 +286,11 @@ const loadDiff = async () => {
 }
 
 const handleDiffTypeChange = (type: string | number | boolean) => {
-  if (type !== 'change') changeRev.value = undefined
+  requestGeneration++
+  loading.value = false
+  diffResult.value = null
+  diffError.value = ''
+  if (type !== 'revision' || (oldRev.value !== undefined && newRev.value !== undefined)) void loadDiff()
 }
 
 const switchToFile = (index: number) => {
@@ -293,7 +305,12 @@ const switchToFile = (index: number) => {
     index,
   }))
   const query: Record<string, string> = { path: fileList.value[index] }
-  if (route.query.revision) query.revision = route.query.revision as string
+  if (changeRev.value) query.revision = String(changeRev.value)
+  query.mode = diffType.value
+  if (diffType.value === 'revision') {
+    if (oldRev.value !== undefined) query.old = String(oldRev.value)
+    if (newRev.value !== undefined) query.new = String(newRev.value)
+  }
   router.replace({ query })
 }
 
@@ -343,8 +360,12 @@ onBeforeRouteLeave((to) => {
 })
 
 watch(
-  () => [route.query.path, route.query.revision] as const,
+  () => [route.query.path, route.query.revision, workspaceStore.currentPath] as const,
   ([path, revision]) => {
+    requestGeneration++
+    diffResult.value = null
+    diffError.value = ''
+    loading.value = false
     if (!path) return
 
     currentPath.value = path as string
@@ -356,14 +377,23 @@ watch(
     if (Number.isInteger(parsedRevision) && parsedRevision > 0) {
       diffType.value = 'change'
       changeRev.value = parsedRevision
+      oldRev.value = parsedRevision - 1
+      newRev.value = parsedRevision
     } else {
       diffType.value = 'working'
       changeRev.value = undefined
     }
-    loadDiff()
+    if (remoteTarget.value && diffType.value === 'working') diffType.value = 'revision'
+    if (route.query.mode === 'revision') {
+      diffType.value = 'revision'
+      if (typeof route.query.old === 'string') oldRev.value = Number(route.query.old)
+      if (typeof route.query.new === 'string') newRev.value = Number(route.query.new)
+    }
+    void loadDiff()
   },
   { immediate: true }
 )
+onBeforeUnmount(() => { requestGeneration++ })
 </script>
 
 <style scoped>
@@ -372,6 +402,8 @@ watch(
 }
 
 .diff-card {
+  display: flex;
+  flex-direction: column;
   height: 100%;
   border-radius: var(--app-radius-lg);
 }
@@ -379,10 +411,13 @@ watch(
 :deep(.diff-card > .el-card__body) {
   display: flex;
   flex-direction: column;
-  height: calc(100% - 57px);
+  flex: 1;
   min-height: 0;
 }
 
+.diff-error { padding: 16px; color: var(--el-color-danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+.empty-result { padding: 24px; text-align: center; color: var(--el-text-color-secondary); }
+:deep(.diff-card > .el-card__header) { flex-shrink: 0; }
 .view-title {
   display: inline-flex;
   align-items: center;

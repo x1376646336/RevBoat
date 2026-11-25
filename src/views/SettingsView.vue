@@ -49,6 +49,8 @@
 
         <el-divider />
 
+        <SvnAccountSettings />
+        <el-divider />
         <div class="settings-section">
           <h3 class="section-title">
             <el-icon><FolderOpened /></el-icon>
@@ -106,7 +108,7 @@
               <el-icon><FolderOpened /></el-icon>
             </div>
             <div class="about-info">
-              <h4>OrcaSVN</h4>
+              <h4>版舟 RevBoat</h4>
               <p class="about-subtitle">{{ $t('settings.aboutSubtitle') }}</p>
             </div>
           </div>
@@ -127,7 +129,7 @@
                 {{ $t(`appUpdate.${updateState}`) }}
               </span>
               <el-button
-                v-if="updateState !== 'checking'"
+                v-if="updateState !== 'checking' && updateState !== 'localBuild'"
                 size="small"
                 link
                 @click="checkForUpdates"
@@ -143,6 +145,7 @@
 </template>
 
 <script setup lang="ts">
+import SvnAccountSettings from '@/components/SvnAccountSettings.vue'
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'

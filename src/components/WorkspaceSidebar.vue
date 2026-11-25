@@ -1,16 +1,17 @@
 <template>
-  <aside class="workspace-panel" :class="{ collapsed: store.workspaceListCollapsed }" :aria-label="t('workspacePanel.title')">
+  <aside class="workspace-panel" :class="{ collapsed: collapsed }" :aria-label="t('workspacePanel.title')">
     <header class="panel-heading">
-      <button class="collapse-toggle" :aria-expanded="!store.workspaceListCollapsed" :title="t(store.workspaceListCollapsed ? 'workspacePanel.expand' : 'workspacePanel.collapse')" @click="toggleCollapsed">
-        <el-icon><ArrowRight v-if="store.workspaceListCollapsed" /><ArrowLeft v-else /></el-icon>
-        <h2 v-if="!store.workspaceListCollapsed">{{ t('workspacePanel.title') }} <span>{{ store.recentWorkspaces.length }}</span></h2>
+      <button v-if="!props.picker" class="collapse-toggle" :aria-expanded="!collapsed" :title="t(collapsed ? 'workspacePanel.expand' : 'workspacePanel.collapse')" @click="toggleCollapsed">
+        <el-icon><ArrowRight v-if="collapsed" /><ArrowLeft v-else /></el-icon>
+        <h2 v-if="!collapsed">{{ t('workspacePanel.title') }} <span>{{ store.recentWorkspaces.length }}</span></h2>
       </button>
-      <button v-if="!store.workspaceListCollapsed" class="icon-button" :disabled="refreshing" :title="t('workspacePanel.refresh')" :aria-label="t('workspacePanel.refresh')" @click="refreshSummaries">
+      <h2 v-if="props.picker">{{ t('workspacePanel.title') }} <span>{{ store.recentWorkspaces.length }}</span></h2>
+      <button v-if="!collapsed" class="icon-button" :disabled="refreshing" :title="t('workspacePanel.refresh')" :aria-label="t('workspacePanel.refresh')" @click="refreshSummaries">
         <el-icon :class="{ spinning: refreshing }"><Refresh /></el-icon>
       </button>
     </header>
-    <button v-show="!store.workspaceListCollapsed" class="add-workspace" @click="emit('open')"><el-icon><Plus /></el-icon>{{ t('workspace.addWorkspace') }}</button>
-    <div v-show="!store.workspaceListCollapsed" class="workspace-tabs" role="tablist" :aria-label="t('workspacePanel.title')">
+    <button v-show="!collapsed" class="add-workspace" @click="emit('open')"><el-icon><Plus /></el-icon>{{ t('workspace.addWorkspace') }}</button>
+    <div v-show="!collapsed" class="workspace-tabs" role="tablist" :aria-label="t('workspacePanel.title')">
       <button id="workspaces-tab-all" type="button" role="tab" :aria-selected="activeTab === 'all'" aria-controls="workspaces-tab-panel" :tabindex="activeTab === 'all' ? 0 : -1" @click="changeTab('all')" @keydown="navigateTabs($event)">
         {{ t('workspacePanel.tabAll') }} <span>{{ store.recentWorkspaces.length }}</span>
       </button>
@@ -18,7 +19,7 @@
         {{ t('workspacePanel.tabFavorites') }} <span>{{ store.favoriteWorkspaces.length }}</span>
       </button>
     </div>
-    <div v-show="!store.workspaceListCollapsed" class="sort-toolbar">
+    <div v-show="!collapsed" class="sort-toolbar">
       <label for="workspace-sort">{{ t('workspacePanel.sortLabel') }}</label>
       <select id="workspace-sort" :value="store.workspaceSortMode" @change="changeSort">
         <option value="manual">{{ t('workspacePanel.sortManual') }}</option>
@@ -26,13 +27,14 @@
         <option value="modified">{{ t('workspacePanel.sortModified') }}</option>
       </select>
     </div>
-    <p v-show="!store.workspaceListCollapsed" class="drag-help">{{ t('workspacePanel.dragHelp') }}</p>
-    <div id="workspaces-tab-panel" v-show="!store.workspaceListCollapsed" class="workspace-list" role="tabpanel" :aria-labelledby="activeTab === 'all' ? 'workspaces-tab-all' : 'workspaces-tab-favorites'" :aria-busy="refreshing" @dragover="scrollWhileDragging" @drop.prevent="endDrag">
+    <p v-show="!collapsed" class="drag-help">{{ t('workspacePanel.dragHelp') }}</p>
+    <div id="workspaces-tab-panel" v-show="!collapsed" class="workspace-list" role="tabpanel" :aria-labelledby="activeTab === 'all' ? 'workspaces-tab-all' : 'workspaces-tab-favorites'" :aria-busy="refreshing" @dragover="scrollWhileDragging" @drop.prevent="endDrag">
       <p v-if="!visibleWorkspaces.length" class="empty-list">{{ t(activeTab === 'favorites' ? 'workspacePanel.emptyFavorites' : 'workspacePanel.empty') }}</p>
       <article v-for="path in visibleWorkspaces" :key="path" class="workspace-card" :class="{ selected: path === store.currentPath, dragging: dragPath === path, 'drop-before': dropPath === path && !dropAfter, 'drop-after': dropPath === path && dropAfter }"
         draggable="true" @dragstart="startDrag($event, path)" @dragover.prevent="dragOver($event, path)" @drop.prevent.stop="dropWorkspace(path)" @dragend="endDrag">
         <button class="workspace-select" :aria-pressed="path === store.currentPath" :title="workspaceTitle(path)" @click="emit('select', path)">
           <span class="workspace-name"><strong>{{ workspaceName(path) }}</strong><span v-if="store.workspaceNotes[path]">:{{ store.workspaceNotes[path] }}</span></span>
+          <span v-if="props.picker" class="workspace-path" :title="path">{{ path }}</span>
           <span class="workspace-counts">
             <span :title="t('workspacePanel.changedHelp')">{{ t('workspacePanel.changed') }} <b>{{ store.workspaceSummaries[path]?.changed ?? '—' }}</b></span>
             <span :class="{ missing: store.workspaceSummaries[path]?.missing }">{{ t('status.missing') }} <b>{{ store.workspaceSummaries[path]?.missing ?? '—' }}</b></span>
@@ -70,9 +72,11 @@ import { useWorkspaceStore, type WorkspaceSortMode } from '@/stores/workspace'
 import { useWorkspaceSummaries } from '@/composables/useWorkspaceSummaries'
 import WorkspaceOpenMenu from '@/components/WorkspaceOpenMenu.vue'
 
+const props = withDefaults(defineProps<{ picker?: boolean }>(), { picker: false })
 const emit = defineEmits<{ open: []; select: [path: string] }>()
 const { t } = useI18n()
 const store = useWorkspaceStore()
+const collapsed = computed(() => !props.picker && store.workspaceListCollapsed)
 const { refreshSummaries, refreshing } = useWorkspaceSummaries()
 const activeTab = ref<'all' | 'favorites'>('all')
 const visibleWorkspaces = computed(() => activeTab.value === 'favorites' ? store.sortedFavoriteWorkspaces : store.sortedWorkspaces)
@@ -223,6 +227,7 @@ button:focus-visible { outline: 2px solid var(--md-sys-color-primary); outline-o
 .workspace-select:hover { background: var(--md-sys-state-hover); }
 .workspace-name { display: block; width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; line-height: 18px; }
 .workspace-name strong { font-weight: 600; }
+.workspace-path { font-size: 11px; color: var(--md-sys-color-on-surface-variant); overflow-wrap: anywhere; line-height: 1.5; }
 .workspace-counts { display: flex; align-items: center; gap: 9px; white-space: nowrap; font-size: 11px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .workspace-counts b { margin-left: 2px; font-weight: 600; }
 .workspace-counts .missing, .summary-error { color: var(--md-sys-color-error); }

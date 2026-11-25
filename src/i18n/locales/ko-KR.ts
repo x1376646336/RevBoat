@@ -1,4 +1,6 @@
 export default {
+  accountUi: {"title": "SVN 계정", "currentAccount": "현재 계정", "notConfigured": "앱에 설정되지 않음", "selectWorkspace": "HTTP(S) 또는 SVN 작업 공간을 먼저 선택하세요.", "scopeHint": "계정을 명시하지 않은 동일 서버의 작업 공간에 적용됩니다. 검증 실패 시 기존 계정이 유지됩니다.", "edit": "계정 / 비밀번호 변경", "verifySave": "연결 확인 및 저장", "pinnedAccount": "저장소 URL에 계정이 지정되어 있습니다. 다른 계정을 사용하려면 새 작업 사본을 체크아웃하세요.", "updated": "계정이 변경되었습니다. 이후 작업에 이 계정을 사용합니다.", "backToHistory": "기록으로 돌아가기", "binaryDiff": "바이너리 파일이므로 SVN에서 텍스트 줄 단위로 비교할 수 없습니다. Word, Excel, PDF 파일에는 문서 비교 도구가 필요합니다."},
+  svnAuth: {"keychainHint": "로그인에 성공하면 macOS 키체인에 인증 정보를 저장하여 다음에 자동 로그인합니다. 비밀번호가 유효하지 않으면 다시 입력해야 합니다.", "saveFailed": "로그인했지만 키체인에 저장하지 못했습니다. 다시 시작한 후 로그인이 필요할 수 있습니다.", "title": "SVN 인증", "username": "사용자 이름", "password": "비밀번호", "retry": "로그인 후 다시 시도", "sessionHint": "인증 정보는 현재 세션의 메모리에만 보관됩니다."},
   nav: {
     home: '홈',
     settings: '설정',
@@ -63,7 +65,7 @@ export default {
     themeLight: '라이트',
     themeDark: '다크',
     themeAuto: '자동',
-    aboutSubtitle: 'SVN 워크벤치',
+    aboutSubtitle: 'SVN 데스크톱 클라이언트 · 모든 변경에 기록을.',
   },
   workspacePanel: {
     tabAll: "전체",
@@ -102,7 +104,7 @@ export default {
     title: '작업 공간',
     emptyWorkspace: '작업 공간 없음',
     emptyDescription: '기존 SVN 작업 복사본을 열거나 새 작업 복사본을 체크아웃하세요.',
-    welcomeTitle: 'OrcaSVN에 오신 것을 환영합니다',
+    welcomeTitle: 'RevBoat에 오신 것을 환영합니다',
     welcomeRepository: '환영합니다',
     svnClient: 'Subversion 클라이언트',
     workingCopy: '작업 복사본',
@@ -373,6 +375,7 @@ export default {
     terminal: '터미널',
   },
   appUpdate: {
+    localBuild: '사용자 지정 빌드 · 새 설치 파일로 업데이트',
     available: '새 버전 v{version}',
     check: '업데이트 확인',
     checking: '확인 중…',

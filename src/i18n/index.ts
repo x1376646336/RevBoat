@@ -1,4 +1,5 @@
 import { watch } from 'vue'
+import { desktopZh, desktopEn, desktopTw, desktopJa, desktopKo } from './desktop'
 import { createI18n } from 'vue-i18n'
 import zhCN from './locales/zh-CN'
 import zhTW from './locales/zh-TW'
@@ -46,11 +47,11 @@ const i18n = createI18n({
   locale: getStoredLocale(),
   fallbackLocale: 'en-US',
   messages: {
-    'zh-CN': zhCN,
-    'zh-TW': zhTW,
-    'ja-JP': jaJP,
-    'ko-KR': koKR,
-    'en-US': enUS,
+    'zh-CN': { ...zhCN, desktop: desktopZh },
+    'zh-TW': { ...zhTW, desktop: desktopTw },
+    'ja-JP': { ...jaJP, desktop: desktopJa },
+    'ko-KR': { ...koKR, desktop: desktopKo },
+    'en-US': { ...enUS, desktop: desktopEn },
   },
 })
 

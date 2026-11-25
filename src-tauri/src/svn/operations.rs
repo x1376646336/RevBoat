@@ -90,15 +90,163 @@ fn build_diff_args(
 }
 
 pub async fn checkout(url: &str, path: &str, revision: Option<u64>) -> Result<String, SvnError> {
-    let mut args: Vec<String> = vec!["checkout".to_string(), url.to_string(), path.to_string()];
+    checkout_with_options(url, path, revision, "infinity", false).await
+}
 
+fn checkout_args(
+    url: &str,
+    path: &str,
+    revision: Option<u64>,
+    depth: &str,
+    ignore_externals: bool,
+) -> Result<Vec<String>, SvnError> {
+    if !["infinity", "immediates", "files", "empty"].contains(&depth) {
+        return Err(SvnError::InvalidArguments("Invalid checkout depth".into()));
+    }
+    let mut args = vec!["checkout".to_string(), "--depth".into(), depth.into()];
     if let Some(rev) = revision {
-        args.insert(1, "-r".to_string());
-        args.insert(2, rev.to_string());
+        args.extend(["-r".into(), rev.to_string()]);
+    }
+    if ignore_externals {
+        args.push("--ignore-externals".into());
+    }
+    append_targets(&mut args, &[format!("{}@", url), path.to_string()]);
+    Ok(args)
+}
+
+pub async fn checkout_with_options(
+    url: &str,
+    path: &str,
+    revision: Option<u64>,
+    depth: &str,
+    ignore_externals: bool,
+) -> Result<String, SvnError> {
+    let args = checkout_args(url, path, revision, depth, ignore_externals)?;
+    execute_svn(&args.iter().map(String::as_str).collect::<Vec<_>>(), None).await
+}
+
+pub async fn list_remote(url: &str, revision: Option<u64>) -> Result<String, SvnError> {
+    let revision = revision
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "HEAD".into());
+    // An explicit empty peg revision preserves literal @ characters in names.
+    let target = format!("{}@", url);
+    execute_svn(&["list", "--xml", "-r", &revision, "--", &target], None).await
+}
+
+#[cfg(test)]
+mod checkout_options_tests {
+    use super::checkout_args;
+    #[test]
+    fn separates_targets_and_preserves_literal_at_signs() {
+        let args = checkout_args(
+            "svn://example/repo/a@b",
+            "-destination",
+            Some(12),
+            "files",
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            args,
+            [
+                "checkout",
+                "--depth",
+                "files",
+                "-r",
+                "12",
+                "--ignore-externals",
+                "--",
+                "svn://example/repo/a@b@",
+                "-destination"
+            ]
+        );
+    }
+    #[test]
+    fn real_repository_browsing_and_sparse_checkout() {
+        use std::{
+            fs,
+            process::Command,
+            time::{SystemTime, UNIX_EPOCH},
+        };
+        let base = std::env::temp_dir().join(format!(
+            "orca-ui-checkout-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&base).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(base.clone());
+        let repo = base.join("repo");
+        let seed = base.join("seed");
+        fs::create_dir_all(seed.join("notes & docs@v1")).unwrap();
+        fs::write(seed.join("notes & docs@v1/readme.txt"), "fixture").unwrap();
+        let admin = Command::new("svnadmin")
+            .arg("create")
+            .arg(&repo)
+            .output()
+            .unwrap();
+        assert!(admin.status.success());
+        let url = tauri::Url::from_directory_path(&repo).unwrap().to_string();
+        let import = Command::new("svn")
+            .args(["import", "-m", "fixture"])
+            .arg(&seed)
+            .arg(&url)
+            .output()
+            .unwrap();
+        assert!(
+            import.status.success(),
+            "{}",
+            String::from_utf8_lossy(&import.stderr)
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let xml = runtime.block_on(super::list_remote(&url, Some(1))).unwrap();
+        assert!(xml.contains("notes &amp; docs@v1"), "{xml}");
+        let child = format!("{}notes%20%26%20docs%40v1", url);
+        let child_xml = runtime
+            .block_on(super::list_remote(&child, Some(1)))
+            .unwrap();
+        assert!(child_xml.contains("readme.txt"));
+        let wc = base.join("wc");
+        runtime
+            .block_on(super::checkout_with_options(
+                &url,
+                wc.to_str().unwrap(),
+                Some(1),
+                "empty",
+                true,
+            ))
+            .unwrap();
+        assert!(wc.join(".svn").exists());
+        assert!(!wc.join("notes & docs@v1").exists());
+        let full = base.join("full");
+        runtime
+            .block_on(super::checkout_with_options(
+                &child,
+                full.to_str().unwrap(),
+                Some(1),
+                "infinity",
+                false,
+            ))
+            .unwrap();
+        assert!(full.join("readme.txt").exists());
     }
 
-    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    execute_svn(&args_refs, None).await
+    #[test]
+    fn rejects_unknown_depth() {
+        assert!(checkout_args("svn://example/repo", "/tmp/wc", None, "--force", false).is_err());
+    }
 }
 
 pub async fn update(path: &str, revision: Option<u64>) -> Result<String, SvnError> {
@@ -723,7 +871,7 @@ pub async fn local_revision(path: &str) -> Result<u64, SvnError> {
         .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{output}")))
 }
 
-fn percent_decode(value: &str) -> Option<String> {
+pub(super) fn percent_decode(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -1669,6 +1817,87 @@ mod tests {
     }
 
     #[test]
+    fn real_history_diff_handles_modified_deleted_and_encoded_paths() {
+        let root = std::env::temp_dir().join(format!(
+            "orcasvn-history-diff-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(root.clone());
+        let repo = root.join("repo");
+        assert!(std::process::Command::new("svnadmin")
+            .arg("create")
+            .arg(&repo)
+            .status()
+            .unwrap()
+            .success());
+        let wc = root.join("wc");
+        let url = tauri::Url::from_directory_path(&repo).unwrap();
+        let run = |args: &[&str], cwd: &std::path::Path| {
+            let output = std::process::Command::new("svn")
+                .args(args)
+                .current_dir(cwd)
+                .env("LC_ALL", "en_US.UTF-8")
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        };
+        run(&["checkout", url.as_str(), wc.to_str().unwrap()], &root);
+        let name = "文档 #100%?@v1.txt";
+        let local_target = format!("{name}@");
+        std::fs::write(wc.join(name), "before\n").unwrap();
+        run(&["add", "--", &local_target], &wc);
+        run(&["commit", "-m", "initial"], &wc);
+        std::fs::write(wc.join(name), "after\n").unwrap();
+        run(&["commit", "-m", "modified"], &wc);
+        run(&["delete", "--", &local_target], &wc);
+        run(&["commit", "-m", "deleted"], &wc);
+        let mut file_url = url.clone();
+        file_url
+            .path_segments_mut()
+            .unwrap()
+            .pop_if_empty()
+            .push(name);
+        let target = format!("{file_url}@2");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let changed = diff(wc.to_str().unwrap(), &target, Some(2), None)
+                .await
+                .unwrap();
+            assert!(changed.diff.contains("-before") && changed.diff.contains("+after"));
+            let range = diff(wc.to_str().unwrap(), &target, Some(1), Some(2))
+                .await
+                .unwrap();
+            assert!(range.diff.contains("-before") && range.diff.contains("+after"));
+            let deleted = diff(wc.to_str().unwrap(), &target, Some(3), None)
+                .await
+                .unwrap();
+            assert!(deleted.diff.contains("-after"));
+            let equal = diff(wc.to_str().unwrap(), &target, Some(2), Some(2))
+                .await
+                .unwrap();
+            assert!(equal.diff.is_empty());
+        });
+    }
+
+    #[test]
     fn diff_builds_working_copy_arguments() {
         assert_eq!(
             build_diff_args("src/main.rs", None, None).unwrap(),
@@ -2185,5 +2414,15 @@ mod tests {
             blamed.iter().any(|line| line.line.contains("纯中文内容")),
             "blame hid CJK text: {blamed:?}"
         );
+    }
+}
+
+/// Check authentication without modifying a working copy or publishing a commit.
+pub async fn connection_info(target: &str) -> Result<SvnInfo, SvnError> {
+    if target.contains("://") {
+        let output = execute_svn(&["info", "-r", "HEAD", "--xml", "--", target], None).await?;
+        parse_info_xml(&output)
+    } else {
+        remote_info(target).await
     }
 }

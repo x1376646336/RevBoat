@@ -82,6 +82,49 @@ async fn configure_svn_executable(executable: Option<String>) -> Result<String, 
 }
 
 #[tauri::command]
+fn configure_svn_credentials(
+    server: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    svn::configure_credentials(&server, username, password).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_svn_credentials(server: String, username: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || svn::save_credentials(&server, &username))
+        .await
+        .map_err(|_| "Credential storage unavailable".to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn get_svn_account(target: String) -> Result<svn::SvnAccountInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || svn::account_info(&target))
+        .await
+        .map_err(|_| "Credential lookup unavailable".to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn change_svn_account(
+    target: String,
+    username: String,
+    password: String,
+) -> Result<bool, String> {
+    svn::change_account(&target, username, password)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn svn_connection_info(target: String) -> Result<SvnInfo, String> {
+    svn::connection_info(&target)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 async fn open_workspace_target(
     path: String,
     target: OpenTarget,
@@ -529,10 +572,25 @@ async fn svn_checkout(
     url: String,
     path: String,
     revision: Option<u64>,
+    depth: Option<String>,
+    ignore_externals: Option<bool>,
 ) -> Result<CommandResult, String> {
-    svn::checkout(&url, &path, revision)
+    svn::checkout_with_options(
+        &url,
+        &path,
+        revision,
+        depth.as_deref().unwrap_or("infinity"),
+        ignore_externals.unwrap_or(false),
+    )
+    .await
+    .map(success_output)
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn svn_list_remote(url: String, revision: Option<u64>) -> Result<String, String> {
+    svn::list_remote(&url, revision)
         .await
-        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -856,8 +914,14 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             configure_svn_executable,
+            configure_svn_credentials,
+            save_svn_credentials,
+            get_svn_account,
+            change_svn_account,
+            svn_connection_info,
             launch_workspace_path,
             svn_checkout,
+            svn_list_remote,
             svn_update,
             svn_commit,
             svn_status,

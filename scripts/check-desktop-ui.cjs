@@ -1,0 +1,56 @@
+// Production UI, fictional fixtures; no network repositories or credentials.
+const {chromium}=require('playwright')
+const assert=require('node:assert/strict')
+const path=require('node:path')
+const fs=require('node:fs')
+const output=path.resolve(__dirname,'../../RevBoat-新版截图')
+fs.mkdirSync(output,{recursive:true})
+async function fixture(page, authRequired=false) {
+ await page.addInitScript(({authRequired})=>{
+  localStorage.setItem('orcasvn-last-workspace','/workspaces/orca-desktop')
+  localStorage.setItem('orcasvn-recent-workspaces',JSON.stringify(['/workspaces/orca-desktop','/workspaces/project-docs']))
+  localStorage.setItem('orcasvn-workspace-list-settings-v1',JSON.stringify({sortMode:'manual',collapsed:true}))
+  localStorage.setItem('orcasvn-settings',JSON.stringify({language:'zh-CN',theme:'light'}))
+  const status=[['Sources/Sync/UpdateScheduler.swift','modified'],['Sources/Sync/ConflictResolver.swift','modified'],['Sources/Sync/RetryPolicy.swift','added'],['Sources/UI/History/CommitListView.swift','modified'],['Sources/Legacy/PollingTimer.swift','deleted'],['Resources/Localizable.strings','modified'],['Config/defaults.plist','conflicted'],['Tests/RetryPolicyTests.swift','unversioned']].map(([path,code])=>({path,status:code,status_code:code,prop_status:'none',locked:false,history:false,switched:false}))
+  const messages=['更新简体中文文案，统一检出与贮藏等术语','修复增量更新时偶发的工作副本锁定问题\n\n更新前检查工作副本状态，超时后提示执行清理。\n取消更新任务时同步释放文件句柄。','提交历史支持按文件路径筛选','差异视图增加行内高亮','调整侧栏仓库切换器的间距与悬停状态','更新版本号与变更日志','合并缺陷修复到主干','完善仓库认证流程','新增贮藏列表的重命名与删除操作','修复中文文件名的编码比较错误','检出界面支持选择检出深度','移除已废弃的轮询配置项','为冲突文件添加解决入口','状态栏显示当前工作副本版本号','重构 SVN 命令执行层','补充提交操作的测试','适配深色菜单栏','初始化开发周期']
+  const logs=messages.map((message,index)=>({revision:55-index,message,author:['许安然','周雨桐','林知远','陈默'][index%4],date:new Date(Date.UTC(2026,10,25-Math.floor(index/4),14,index%4*10)).toISOString(),changed_paths:[{path:'/trunk/Sources/Sync/UpdateScheduler.swift',action:'M'},{path:'/trunk/Sources/Sync/RetryPolicy.swift',action:'A'},{path:'/trunk/Resources/Localizable.strings',action:'M'}]}))
+  const diff='Index: UpdateScheduler.swift\n===================================================================\n--- UpdateScheduler.swift (revision 54)\n+++ UpdateScheduler.swift (working copy)\n@@ -1,8 +1,10 @@\n final class UpdateScheduler {\n     private let client: SVNClient\n-    private var timer: PollingTimer?\n-    private let interval: TimeInterval = 60\n+    private let retryPolicy: RetryPolicy\n+    private var task: Task<Void, Never>?\n+    private let interval: Duration = .seconds(60)\n \n     func start() {\n-        timer = PollingTimer(interval: interval)\n+        task = Task { [weak self] in\n+            await self?.checkForUpdates()\n+        }\n     }\n }\n'
+  const info={path:'/workspaces/orca-desktop',url:'https://svn.example.com/repos/orca-desktop/trunk',repository_root:'https://svn.example.com/repos/orca-desktop',revision:55,node_kind:'dir',schedule:'normal'}
+  let authenticated=!authRequired
+  window.__desktopCalls=[]
+  window.__TAURI_INTERNALS__={invoke:async(command,args={})=>{
+   window.__desktopCalls.push({command,args:command==='configure_svn_credentials'?{server:args.server}:args})
+   if(command==='configure_svn_executable')return '1.15.0'
+   if(command==='svn_info'||command==='svn_remote_info')return info
+   if(command==='svn_local_revision')return 55
+   if(command==='svn_status')return status
+   if(command==='svn_current_user')return {username:'demo',realm:'example'}
+   if(command==='workspace_latest_modified')return 1795640000000
+   if(command==='configure_svn_credentials'){authenticated=true;return null}
+   if(command==='svn_connection_info'||command==='svn_list_remote'){
+    if(!authenticated)throw "svn: E170013: Unable to connect to a repository at URL 'svn://svn.example.com/project'\nsvn: E170001: Can't get username or password"
+    if(command==='svn_connection_info')return {...info,url:args.target}
+    const names=args.url.endsWith('/trunk')?['Sources','Resources','Tests','Config','Scripts','Docs']:['trunk','branches','tags','目录 & notes@v1']
+    return '<lists><list>'+names.map((name,i)=>'<entry kind="dir"><name>'+name.replace(/&/g,'&amp;')+'</name><commit revision="'+(55-i)+'"><author>demo</author><date>2026-11-25T14:56:00Z</date></commit></entry>').join('')+'</list></lists>'
+   }
+   if(command==='svn_log')return logs.filter(l=>(!args.keyword||l.message.includes(args.keyword))&&(!args.author||l.author===args.author)).slice(0,args.limit||20)
+   if(command==='svn_diff')return {path:args.file,diff,old_revision:54,new_revision:55}
+   if(command==='svn_checkout')return {success:true,output:'Checked out revision 55.',error:null}
+   if(command==='svn_commit')return {success:true,output:'Committed revision 56.',error:null}
+   return null
+  }}
+ },{authRequired})
+}
+async function main(){const browser=await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL||'chrome'});try{
+const context=await browser.newContext({viewport:{width:1440,height:900},deviceScaleFactor:2});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));await fixture(page);await page.goto('http://127.0.0.1:1424/#/log');await page.locator('.history-row').first().waitFor();await page.locator('.history-row').nth(1).click();await page.locator('.history-preview .diff-code').first().waitFor();await page.locator('.history-scroll').evaluate(el=>el.scrollTop=0);await page.screenshot({path:path.join(output,'01-提交历史.png')});assert.match(await page.locator('.history-detail-header h2').textContent(),/工作副本锁定/)
+await page.locator('.log-filters .el-input input').first().fill('轮询');await page.waitForFunction(()=>document.querySelectorAll('.history-row').length===1);assert.match(await page.locator('.history-message').textContent(),/轮询/);await page.locator('.log-filters .el-input input').first().fill('');await page.waitForFunction(()=>document.querySelectorAll('.history-row').length>1)
+await page.getByRole('button',{name:'本地变更',exact:false}).click();await page.locator('.file-item').first().waitFor();await page.locator('.file-path').first().click();await page.locator('.right-panel .diff-code').first().waitFor();await page.locator('.file-checkbox').nth(0).check();await page.locator('.file-checkbox').nth(1).check();await page.locator('.local-commit-composer textarea').fill('为更新任务引入统一的重试策略\n\n替换旧的轮询实现，完善异常处理。');await page.screenshot({path:path.join(output,'02-本地变更.png')});await page.getByRole('button',{name:'检查并提交',exact:true}).click();await page.waitForURL('**/#/commit?**');assert.match(await page.locator('.commit-textarea textarea').inputValue(),/重试策略/);assert.equal((await page.evaluate(()=>window.__desktopCalls)).some(c=>c.command==='svn_commit'),false)
+await page.locator('.sidebar-add').click();await page.locator('.checkout-form input').first().fill('svn://svn.example.com/project');await page.getByRole('button',{name:'测试连接',exact:true}).click();await page.locator('.connection-result').waitFor();await page.locator('.remote-entry').filter({hasText:'trunk'}).dblclick();await page.locator('.remote-entry').filter({hasText:/Sources/}).waitFor();await page.locator('.url-control').nth(1).locator('input').fill('/workspaces/new-checkout');await page.screenshot({path:path.join(output,'03-检出仓库.png')});assert.match(await page.locator('.selected-folder strong').textContent(),/trunk/);await page.getByRole('button',{name:'上级',exact:true}).click();await page.locator('.remote-entry').filter({hasText:'目录 & notes@v1'}).click();assert.match(await page.locator('.selected-folder small').getAttribute('title'),/%26/)
+await page.locator('.checkout-options input').nth(0).check();await page.locator('.checkout-options input').nth(1).uncheck();await page.getByRole('button',{name:'开始检出',exact:true}).click();await page.locator('.output-header .el-tag--success').waitFor();const checkout=await page.evaluate(()=>window.__desktopCalls.filter(c=>c.command==='svn_checkout').at(-1));assert.equal(checkout.args.ignoreExternals,true);assert.equal(checkout.args.depth,'infinity');assert.match(checkout.args.url,/%26.*%40v1$/);assert.equal((await page.locator('.desktop-heading strong').textContent()).trim(),'检出仓库');
+await page.locator('.repository-switch').click();await page.locator('.workspace-picker-dialog .workspace-panel').waitFor();const picker=page.locator('.workspace-picker-dialog');await picker.locator('.workspace-path').filter({hasText:'/workspaces/project-docs'}).waitFor();assert.equal(await picker.locator('.collapse-toggle').count(),0);await page.screenshot({path:path.join(output,'05-切换工作区.png'),animations:'disabled'});await picker.locator('.workspace-select').filter({hasText:'/workspaces/project-docs'}).click();await page.waitForURL('**/#/');await page.waitForFunction(()=>document.querySelector('.repository-copy strong')?.textContent==='project-docs');await page.reload();await page.locator('.repository-switch').click();await page.locator('.workspace-picker-dialog .workspace-path').filter({hasText:'/workspaces/project-docs'}).waitFor();await page.keyboard.press('Escape')
+for(const size of [[1280,800],[1024,768],[800,600]]){await page.setViewportSize({width:size[0],height:size[1]});for(const route of ['log','','checkout']){await page.goto('http://127.0.0.1:1424/#/'+route);await page.waitForTimeout(180);const dimensions=await page.evaluate(()=>({w:innerWidth,sw:document.documentElement.scrollWidth}));assert.equal(dimensions.sw<=dimensions.w,true,'viewport overflow '+route+' '+size[0]);if(route==='checkout'){const button=await page.locator('.checkout-actions .el-button--primary').boundingBox();assert.ok(button.x+button.width<=size[0] && button.y+button.height<=size[1],'checkout action is visible')}}}
+assert.deepEqual(errors,[]);await context.close();
+const authContext=await browser.newContext({viewport:{width:1440,height:900},deviceScaleFactor:2});const authPage=await authContext.newPage();await fixture(authPage,true);await authPage.goto('http://127.0.0.1:1424/#/checkout');await authPage.locator('.checkout-form input').first().fill('svn://svn.example.com/project');await authPage.getByRole('button',{name:'测试连接',exact:true}).click();const dialog=authPage.locator('.desktop-auth-dialog');await dialog.waitFor();await dialog.locator('input[autocomplete="username"]').fill('demo');await dialog.locator('input[autocomplete="current-password"]').fill('fictional-password');await authPage.screenshot({path:path.join(output,'04-仓库登录.png'),animations:'disabled'});await dialog.locator('.auth-visibility').click();assert.equal(await dialog.locator('input[autocomplete="current-password"]').getAttribute('type'),'text');await dialog.locator('.auth-visibility').click();await dialog.locator('.el-button--primary').click();await authPage.locator('.connection-result').waitFor();assert.equal(await authPage.evaluate(()=>Object.values(localStorage).some(v=>v.includes('fictional-password'))),false);await authContext.close();console.log('Desktop UI passed: logs, inline diff, search, draft handoff, remote directories, special-character URLs, workspace picker, password visibility, authentication, 3 window sizes. Screenshots saved.')
+}finally{await browser.close()}}
+module.exports = { fixture }
+if (require.main === module) main().catch(error=>{console.error(error);process.exitCode=1})

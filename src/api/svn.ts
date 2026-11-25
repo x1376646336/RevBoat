@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+import { invokeWithAuthPrompt } from './auth'
 import type { CommandResult, SvnStatus, SvnLogEntry, SvnInfo, SvnAuthUser, DiffResult, BlameLine, StashUnversionedEntry } from '@/types'
 
 export async function configureSvnExecutable(executable?: string): Promise<string> {
@@ -7,16 +8,23 @@ export async function configureSvnExecutable(executable?: string): Promise<strin
   })
 }
 
+async function checkConnection(target: string): Promise<void> {
+  await invokeWithAuthPrompt('svn_connection_info', { target })
+}
+
 export async function svnCheckout(
   url: string,
   path: string,
-  revision?: number
+  revision?: number,
+  depth = 'infinity',
+  ignoreExternals = false
 ): Promise<CommandResult> {
-  return invoke<CommandResult>('svn_checkout', { url, path, revision })
+  await checkConnection(url)
+  return invoke<CommandResult>('svn_checkout', { url, path, revision, depth, ignoreExternals })
 }
 
 export async function svnUpdate(path: string, revision?: number): Promise<CommandResult> {
-  return invoke<CommandResult>('svn_update', { path, revision })
+  return invokeWithAuthPrompt<CommandResult>('svn_update', { path, revision })
 }
 
 export async function svnCommit(
@@ -25,6 +33,7 @@ export async function svnCommit(
   files?: string[],
   autoDeleteMissing = false,
 ): Promise<CommandResult> {
+  await checkConnection(path)
   return invoke<CommandResult>('svn_commit', { path, message, files, autoDeleteMissing })
 }
 
@@ -46,7 +55,7 @@ export async function svnLog(
   dateFrom?: string,
   dateTo?: string
 ): Promise<SvnLogEntry[]> {
-  return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, author, dateFrom, dateTo })
+  return invokeWithAuthPrompt<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, author, dateFrom, dateTo })
 }
 
 export async function svnIncomingLog(
@@ -55,7 +64,7 @@ export async function svnIncomingLog(
   head: number,
   local: number
 ): Promise<SvnLogEntry[]> {
-  return invoke<SvnLogEntry[]>('svn_incoming_log', { path, limit, head, local })
+  return invokeWithAuthPrompt<SvnLogEntry[]>('svn_incoming_log', { path, limit, head, local })
 }
 
 export async function svnCurrentUser(path: string): Promise<SvnAuthUser | null> {
@@ -71,7 +80,7 @@ export async function svnLocalRevision(path: string): Promise<number> {
 }
 
 export async function svnRemoteInfo(path: string): Promise<SvnInfo> {
-  return invoke<SvnInfo>('svn_remote_info', { path })
+  return invokeWithAuthPrompt<SvnInfo>('svn_remote_info', { path })
 }
 
 export async function svnDiff(
@@ -80,7 +89,7 @@ export async function svnDiff(
   oldRev?: number,
   newRev?: number
 ): Promise<DiffResult> {
-  return invoke<DiffResult>('svn_diff', { workspacePath, file, oldRev, newRev })
+  return invokeWithAuthPrompt<DiffResult>('svn_diff', { workspacePath, file, oldRev, newRev })
 }
 
 export async function svnApplyPatch(
@@ -92,7 +101,7 @@ export async function svnApplyPatch(
 }
 
 export async function svnBlame(workspacePath: string, file: string): Promise<BlameLine[]> {
-  return invoke<BlameLine[]>('svn_blame', { workspacePath, file })
+  return invokeWithAuthPrompt<BlameLine[]>('svn_blame', { workspacePath, file })
 }
 
 export async function svnAdd(path: string, files: string[]): Promise<CommandResult> {
@@ -136,6 +145,7 @@ export async function svnCleanup(path: string): Promise<CommandResult> {
 }
 
 export async function svnSwitch(path: string, url: string): Promise<CommandResult> {
+  await checkConnection(url.includes('://') ? url : path)
   return invoke<CommandResult>('svn_switch', { path, url })
 }
 
@@ -154,6 +164,7 @@ export async function svnMerge(
   revStart: number,
   revEnd: number
 ): Promise<CommandResult> {
+  await checkConnection(source.includes('://') ? source : path)
   return invoke<CommandResult>('svn_merge', { path, source, revStart, revEnd })
 }
 
@@ -173,4 +184,11 @@ export async function revealWorkspaceFile(path: string, file: string): Promise<v
 
 export async function launchWorkspacePath(): Promise<string | null> {
   return invoke<string | null>('launch_workspace_path')
+}
+
+export async function svnConnectionInfo(target: string): Promise<SvnInfo> {
+  return invokeWithAuthPrompt<SvnInfo>('svn_connection_info', { target })
+}
+export async function svnListRemote(url: string, revision?: number): Promise<string> {
+  return invokeWithAuthPrompt<string>('svn_list_remote', { url, revision })
 }

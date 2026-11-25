@@ -35,58 +35,9 @@
 
     <!-- 工作区主界面 -->
     <div v-else ref="splitContainer" class="workspace-layout" :class="{ 'is-stacked': splitStacked, 'is-resizing': resizingPanels }" :style="{ '--status-panel-width': `${statusPanelWidth}px` }">
-      <!-- 左侧面板：工作区信息 -->
-      <aside class="left-panel">
-        <div class="repository-name">
-          <strong>{{ workspaceName }}</strong>
-          <button :aria-label="$t('workspace.closeWorkspace')" :title="$t('workspace.closeWorkspace')" @click="closeWorkspace"><el-icon><Close /></el-icon></button>
-        </div>
-        <div class="sidebar-section">
-          <div class="sidebar-heading">{{ $t('workspace.workingCopy') }}</div>
-          <button class="sidebar-row active" @click="setFilter('all')">
-            <el-icon><Document /></el-icon>
-            <span>{{ $t('workspace.fileStatus') }}</span>
-            <b>{{ workspaceStore.statusList.length }}</b>
-          </button>
-          <button class="sidebar-row" @click="doCommit">
-            <el-icon><Upload /></el-icon>
-            <span>{{ $t('common.commit') }}</span>
-          </button>
-        </div>
-        <div class="sidebar-section">
-          <div class="sidebar-heading">{{ $t('workspace.repository') }}</div>
-          <button class="sidebar-row" @click="router.push({ name: 'log' })">
-            <el-icon><List /></el-icon>
-            <span>{{ $t('menu.log') }}</span>
-          </button>
-          <button class="sidebar-row" @click="router.push({ name: 'blame' })">
-            <el-icon><Edit /></el-icon>
-            <span>{{ $t('menu.blame') }}</span>
-          </button>
-        </div>
-        <div v-if="workspaceStore.svnInfo" class="repository-meta">
-          <div><span>URL</span><strong>{{ workspaceStore.svnInfo.url }}</strong></div>
-          <div><span>{{ $t('workspace.revision') }}</span><strong>r{{ workspaceStore.svnInfo.revision }}</strong></div>
-        </div>
-        <div class="sidebar-actions">
-          <button @click="doCleanup"><el-icon><Brush /></el-icon>{{ $t('common.cleanup') }}</button>
-        </div>
-      </aside>
-
       <!-- 中间面板：文件列表 -->
       <main class="center-panel">
-        <div class="panel-header">
-          <span class="panel-title">
-            <el-icon><List /></el-icon>
-            {{ $t('workspace.fileStatus') }}
-          </span>
-          <div class="header-actions">
-            <el-button text size="small" :aria-label="$t('menu.refresh')" :title="$t('menu.refresh')" @click="refreshStatus" :loading="workspaceStore.isLoading">
-              <el-icon><Refresh /></el-icon>
-            </el-button>
-          </div>
-        </div>
-
+        <div class="local-file-toolbar"><el-input v-model="fileQuery" :placeholder="$t('commit.searchFiles')" clearable size="small"><template #prefix><el-icon><Search /></el-icon></template></el-input><el-button text size="small" @click="doCleanup" :title="$t('common.cleanup')" :aria-label="$t('common.cleanup')"><el-icon><Brush /></el-icon></el-button></div>
         <!-- 文件状态统计 -->
         <div class="status-summary">
           <button type="button" class="status-badge modified" :class="{ active: filter === 'modified' }" :aria-pressed="filter === 'modified'" @click="setFilter('modified')">
@@ -144,8 +95,9 @@
                   @click="selectFile(row.file)"
                   @contextmenu.prevent.stop="openFileContextMenu($event, row.file)"
                 >
-                  <span class="file-status" :class="getStatusClass(row.file.status_code)">
-                    {{ getStatusLabel(row.file.status_code) }}
+                  <input type="checkbox" class="file-checkbox" :checked="checkedFiles.includes(row.file.path)" :disabled="row.file.status_code === 'conflicted' || row.file.prop_status === 'conflicted'" :aria-label="`${$t('desktop.selectFile')} ${row.file.path}`" @click.stop @change="toggleFile(row.file.path, ($event.target as HTMLInputElement).checked)" />
+                  <span class="file-status" :class="getStatusClass(row.file.status_code)" :title="getStatusLabel(row.file.status_code)">
+                    {{ ({ modified: 'M', added: 'A', deleted: 'D', replaced: 'R', missing: '!', conflicted: 'C', unversioned: '?' } as Record<string, string>)[row.file.status_code] || getStatusLabel(row.file.status_code) }}
                   </span>
                   <button
                     type="button"
@@ -158,7 +110,7 @@
                     @keydown.up.prevent="focusFile(row.fileIndex - 1)"
                     @keydown.home.prevent="focusFile(0)"
                     @keydown.end.prevent="focusFile(filteredFiles.length - 1)"
-                  >{{ row.file.path }}</button>
+                  ><strong>{{ row.file.path.split('/').pop() }}</strong><small>{{ row.file.path.includes('/') ? row.file.path.slice(0, row.file.path.lastIndexOf('/')) : '.' }}</small></button>
                   <div class="file-actions">
                     <el-tooltip :content="$t('common.diff')" placement="top" :show-after="150">
                       <span class="file-action-trigger" :title="$t('common.diff')" @click.stop>
@@ -205,6 +157,11 @@
             <span>{{ $t('workspace.copyAbsolutePath') }}</span>
           </button>
         </div>
+        <section class="local-commit-composer">
+          <div class="composer-title"><strong>{{ $t('commit.commitMessage') }}</strong><el-button text size="small" @click="router.push({ name: 'stash' })">{{ $t('menu.stash') }}</el-button></div>
+          <el-input v-model="draftMessage" type="textarea" :rows="3" :placeholder="$t('commit.enterCommitMessage')" resize="vertical" />
+          <div class="composer-actions"><span>{{ $t('commit.filesCount', { count: checkedFiles.length }) }}</span><el-button type="primary" :disabled="checkedFiles.length === 0 || workspaceStore.statusIsStale" @click="prepareCommit"><el-icon><Upload /></el-icon>{{ $t('desktop.reviewCommit') }}</el-button></div>
+        </section>
       </main>
 
       <div
@@ -230,10 +187,7 @@
       <!-- 右侧面板：差异预览 -->
       <aside class="right-panel">
         <div class="panel-header">
-          <span class="panel-title">
-            <el-icon><Connection /></el-icon>
-            {{ $t('diff.title') }}
-          </span>
+          <span class="panel-title" :title="selectedFile || ''"><el-icon><Document /></el-icon>{{ selectedFile?.split('/').pop() || $t('diff.title') }}</span><el-button v-if="selectedFile" text size="small" @click="viewDiff(selectedFile)">{{ $t('desktop.fullDiff') }}</el-button>
         </div>
         <div class="panel-content" :aria-busy="isLoadingDiff">
           <GlassLoading :active="isLoadingDiff" :label="$t('common.loading')" />
@@ -244,6 +198,8 @@
           <div v-else-if="isLoadingDiff" class="loading-diff">
             <el-skeleton :rows="10" />
           </div>
+          <div v-else-if="diffError" class="empty-diff diff-error" role="alert">{{ diffError }}</div>
+          <div v-else-if="diffResult && !diffResult.diff.trim()" class="empty-diff">{{ $t('diff.noDiff') }}</div>
           <div v-else-if="diffResult" class="diff-content">
             <div class="diff-header">
               <el-tag class="diff-path-tag" type="primary" size="small" :title="selectedFile">{{ selectedFile }}</el-tag>
@@ -285,7 +241,7 @@ import type { SvnStatus, DiffResult } from '@/types'
 const { t } = useI18n()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
-const { openWorkspace: openWorkspaceDialog, refreshStatus, refreshStatusAfterMutation } = useWorkspace()
+const { openWorkspace: openWorkspaceDialog, refreshStatusAfterMutation } = useWorkspace()
 
 const SPLIT_RATIO_KEY = 'orcasvn-file-status-split-ratio'
 const splitContainer = ref<HTMLElement | null>(null)
@@ -381,6 +337,7 @@ const filter = ref<'all' | 'modified' | 'added' | 'conflicted' | 'missing'>('all
 const selectedFile = ref<string | null>(null)
 const isLoadingDiff = ref(false)
 const diffResult = ref<DiffResult | null>(null)
+const diffError = ref('')
 let diffRequestGeneration = 0
 let fileActionWorkspaceGeneration = 0
 const pendingFileAction = ref<string | null>(null)
@@ -390,18 +347,24 @@ const fileContextMenu = reactive({
   y: 0,
   file: null as SvnStatus | null,
 })
-const workspaceName = computed(() => {
-  const path = workspaceStore.currentPath || ''
-  return path.split(/[\\/]/).filter(Boolean).pop() || path
-})
-
 const fileViewport = ref<InstanceType<typeof VirtualViewport> | null>(null)
-const fileRowHeight = 48
+const fileRowHeight = 50
 const diffStats = ref({ added: 0, removed: 0 })
 
+const fileQuery = ref('')
+const checkedFiles = ref<string[]>([])
+const draftMessage = ref('')
+const toggleFile = (path: string, checked: boolean) => { checkedFiles.value = checked ? [...new Set([...checkedFiles.value, path])] : checkedFiles.value.filter(item => item !== path) }
+const prepareCommit = () => {
+  sessionStorage.setItem('orca_commit_form', JSON.stringify({ workspace: workspaceStore.currentPath, scope: '', selectedFiles: checkedFiles.value, commitMessage: draftMessage.value }))
+  router.push({ name: 'commit', query: { files: checkedFiles.value } })
+}
+watch(() => workspaceStore.currentPath, () => { checkedFiles.value = []; draftMessage.value = ''; fileQuery.value = '' })
+watch(() => workspaceStore.statusList, files => { const available = new Set(files.filter(f => f.status_code !== 'conflicted' && f.prop_status !== 'conflicted').map(f => f.path)); checkedFiles.value = checkedFiles.value.filter(path => available.has(path)) })
 const filteredFiles = computed(() => {
-  if (filter.value === 'all') return workspaceStore.statusList
-  return workspaceStore.statusList.filter(f => {
+  const files = workspaceStore.statusList.filter(f => f.path.toLocaleLowerCase().includes(fileQuery.value.trim().toLocaleLowerCase()))
+  if (filter.value === 'all') return files
+  return files.filter(f => {
     if (filter.value === 'modified') return ['modified', 'added', 'deleted', 'replaced'].includes(f.status_code)
     if (filter.value === 'added') return f.status_code === 'unversioned'
     if (filter.value === 'conflicted') return f.status_code === 'conflicted' || f.prop_status === 'conflicted'
@@ -440,11 +403,12 @@ const loadDiff = async (path: string) => {
     && selectedFile.value === path
   isLoadingDiff.value = true
   diffResult.value = null
+  diffError.value = ''
   try {
     const result = await svnDiff(workspacePath, path)
     if (isCurrent()) diffResult.value = result
-  } catch {
-    if (isCurrent()) diffResult.value = null
+  } catch (error) {
+    if (isCurrent()) { diffResult.value = null; diffError.value = String(error) }
   } finally {
     if (isCurrent()) isLoadingDiff.value = false
   }
@@ -462,17 +426,8 @@ const openWorkspace = async () => {
   }
 }
 
-const closeWorkspace = () => {
-  diffRequestGeneration += 1
-  workspaceStore.clearWorkspace()
-  selectedFile.value = null
-  diffResult.value = null
-  isLoadingDiff.value = false
-}
-
 const doCheckout = () => router.push({ name: 'checkout' })
 
-const doCommit = () => router.push({ name: 'commit' })
 
 const doCleanup = async () => {
   if (!workspaceStore.currentPath) return
@@ -1058,6 +1013,7 @@ const handleFileAction = async (file: SvnStatus) => {
 }
 
 /* 差异预览 */
+.diff-error { color:var(--el-color-danger);white-space:pre-wrap;overflow-wrap:anywhere;padding:16px; }
 .empty-diff,
 .loading-diff {
   display: flex;
@@ -1144,6 +1100,7 @@ const handleFileAction = async (file: SvnStatus) => {
 }
 .changelist-name .el-icon { margin-right: 6px; vertical-align: middle; }
 .changelist-count { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
 </style>
 
 <style scoped>
@@ -1635,4 +1592,7 @@ const handleFileAction = async (file: SvnStatus) => {
   width: 100%;
 }
 
+
+/* Reference layout: compact file browser, inline draft, full-height diff. */
+.workspace-view{height:100%;padding:0}.workspace-layout{height:100%;min-height:0}.local-file-toolbar{display:flex;align-items:center;gap:6px;padding:8px 12px;border-bottom:1px solid var(--md-sys-color-outline-variant);height:44px;flex-shrink:0}.local-file-toolbar .el-input{min-width:0}.local-file-toolbar :deep(.el-input__wrapper){background:var(--md-sys-color-surface-container)}.status-summary{padding:6px 10px;gap:4px;flex-wrap:wrap;background:var(--md-sys-color-surface-container-low);min-height:35px}.status-summary .status-badge{padding:3px 5px;min-height:23px;font-size:10px;border-radius:4px}.status-summary .badge-count{font-size:10px}.file-checkbox{width:14px;height:14px;accent-color:var(--md-sys-color-primary);flex-shrink:0;cursor:pointer}.file-item{gap:10px;padding:0 14px;border-bottom:1px solid var(--md-sys-color-outline-variant)}.file-item.selected{background:var(--desktop-selected);color:var(--desktop-selected-text)}.file-item .file-path{font-family:var(--app-font-family);display:block;text-align:left;line-height:1.5}.file-item .file-path strong{display:block;font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-item .file-path small{display:block;color:var(--md-sys-color-on-surface-variant);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.file-item.selected .file-path,.file-item.selected .file-path small{color:var(--desktop-selected-text)}.file-item .file-status{flex-shrink:0;border-radius:4px;min-height:18px;font-size:10px}.file-item.selected :deep(.el-button){color:var(--desktop-selected-text)}.local-commit-composer{padding:10px 12px 12px;border-top:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);flex-shrink:0}.composer-title,.composer-actions{display:flex;align-items:center;justify-content:space-between;font-size:11px;gap:8px}.composer-title{margin-bottom:7px}.composer-title strong{font-weight:600}.composer-actions{margin-top:9px;color:var(--md-sys-color-on-surface-variant)}.composer-actions :deep(.el-button){font-size:11px}.right-panel .panel-header{height:49px;justify-content:space-between;padding:0 16px;flex-shrink:0;gap:10px}.right-panel .panel-title{font-size:13px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diff-header{border-radius:0;padding:7px 12px;min-height:32px;background:var(--md-sys-color-surface-container-low)}.diff-header :deep(.el-tag){border:0;background:transparent}.right-panel :deep(.diff-lines){border:0;border-radius:0}.right-panel :deep(.diff-tools){border-radius:0}.diff-content{padding:0}.right-panel .panel-content{padding:0}
 </style>

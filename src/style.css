@@ -1020,3 +1020,18 @@ body,
   min-height: 0;
   overflow: auto;
 }
+
+/* Compact desktop controls shared by the reference-based layout. */
+.el-button{font-weight:550;letter-spacing:0;padding:5px 12px;gap:6px}
+.el-button--small{min-height:28px;padding:3px 9px;font-size:11px}
+.el-button--default{border-color:var(--md-sys-color-outline-variant);box-shadow:0 1px 2px #25374d08}
+.el-input__wrapper,.el-select__wrapper,.el-textarea__inner{box-shadow:0 0 0 1px var(--md-sys-color-outline-variant) inset}
+.el-input__wrapper.is-focus,.el-select__wrapper.is-focused{box-shadow:0 0 0 1px var(--md-sys-color-primary) inset,0 0 0 3px color-mix(in srgb,var(--md-sys-color-primary) 14%,transparent)}
+.el-card{border-radius:8px}.el-tag{border-radius:4px;font-weight:500;min-height:20px}
+.el-table th.el-table__cell,.el-table td.el-table__cell{padding:4px 0;font-weight:400}
+.el-table th.el-table__cell{font-weight:550}
+
+.desktop-auth-dialog{width:440px!important;max-width:calc(100vw - 32px);padding:0!important;border:1px solid var(--md-sys-color-outline-variant);border-radius:12px;box-shadow:0 20px 55px #15223533;background:var(--md-sys-color-surface-container-lowest)}
+.desktop-auth-dialog .el-message-box__header{padding:26px 24px 25px 82px;min-height:78px;position:relative}.desktop-auth-dialog .el-message-box__header:before{content:'';position:absolute;left:24px;top:22px;width:43px;height:43px;background:var(--md-sys-color-primary);border-radius:10px;box-shadow:0 2px 5px #23394e20}.desktop-auth-dialog .el-message-box__header:after{content:'';position:absolute;left:37px;top:37px;width:15px;height:14px;border:1.5px solid var(--md-sys-color-on-primary);border-radius:3px}.desktop-auth-dialog .el-message-box__title{font-size:15px;font-weight:650;line-height:26px}.desktop-auth-dialog .el-message-box__content{padding:6px 24px 20px}.desktop-auth-dialog .el-message-box__message{width:100%}.desktop-auth-dialog form>label{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;gap:10px;margin:0 0 13px;font-size:12px;text-align:right}.desktop-auth-dialog .el-input__wrapper{min-height:33px;padding:0 10px}.desktop-auth-dialog input{font-size:12px;min-width:0;width:100%;height:32px}.desktop-auth-dialog .auth-server input{font-size:11px}.auth-visibility{display:grid;place-items:center;border:0;background:transparent;padding:4px;color:var(--md-sys-color-on-surface-variant);cursor:pointer;border-radius:3px}.auth-visibility:hover{background:var(--md-sys-state-hover)}.desktop-auth-dialog .auth-session-hint{font-size:10px!important;line-height:1.8!important;color:var(--md-sys-color-on-surface-variant);padding-left:84px;margin:3px 0 0}.desktop-auth-dialog .el-message-box__btns{background:var(--md-sys-color-surface-container-low);padding:14px 24px;border-top:1px solid var(--md-sys-color-outline-variant)}.desktop-auth-dialog .el-message-box__btns .el-button{min-width:76px;min-height:31px}.desktop-auth-dialog .el-message-box__headerbtn{top:12px;right:12px}.el-overlay.is-message-box{background:rgba(25,40,57,.3)}
+
+.desktop-auth-dialog .el-message-box__header:after{left:34px;top:31px;width:24px;height:24px;border:0;background:center/24px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='1.7' stroke-linecap='round'%3E%3Crect x='5' y='10' width='14' height='11' rx='2'/%3E%3Cpath d='M8 10V7a4 4 0 0 1 8 0v3m-4 5v2'/%3E%3C/svg%3E")}

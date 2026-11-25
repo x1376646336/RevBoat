@@ -14,6 +14,9 @@ function harness(fetch) {
     '@/api/svn': { svnLog: async (...args) => { calls.push(args); return fetch(...args) } },
     'vue-i18n': { useI18n: () => ({ t: key => key, locale: vue.ref('en-US') }) },
     '@/composables/useWorkspace': { useWorkspace: () => ({}) },
+    '@/utils/diffTarget': { repositoryDiffTarget() {} },
+    '@/utils/clipboard': { writeClipboardText: async () => {} },
+    'element-plus/es/components/message/index': { ElMessage: { error() {} } },
     'vue-router': { useRouter: () => ({}) },
   }
   const script = fs.readFileSync('src/views/LogView.vue', 'utf8').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]

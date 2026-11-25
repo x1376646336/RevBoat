@@ -1,4 +1,6 @@
 export default {
+  accountUi: {"title": "SVN 帳號", "currentAccount": "目前帳號", "notConfigured": "尚未在應用程式中設定", "selectWorkspace": "請先選擇使用 HTTP(S) 或 SVN 通訊協定的工作區。", "scopeHint": "此帳號用於同一伺服器下未指定帳號的工作區。驗證失敗會保留原帳號。", "edit": "修改帳號 / 密碼", "verifySave": "驗證連線並儲存", "pinnedAccount": "儲存庫網址已指定帳號。如需其他帳號，請以新帳號重新取出工作副本。", "updated": "帳號已更新，後續操作將使用此帳號。", "backToHistory": "返回提交歷程", "binaryDiff": "此檔案為二進位格式，SVN 無法產生逐行文字差異；Word、Excel、PDF 等檔案需要對應的文件比較工具。"},
+  svnAuth: {"keychainHint": "登入成功後將認證資料儲存至 macOS 鑰匙圈，下次自動登入。密碼失效時需重新輸入。", "saveFailed": "登入成功，但無法儲存至鑰匙圈。目前仍可使用，重新啟動後可能需要再次登入。", "title": "SVN 身分驗證", "username": "帳號", "password": "密碼", "retry": "登入並重試", "sessionHint": "認證資料僅保留於本次執行記憶體，結束後需重新輸入。"},
   nav: {
     home: '首頁',
     settings: '設定',
@@ -63,7 +65,7 @@ export default {
     themeLight: '淺色',
     themeDark: '深色',
     themeAuto: '自動',
-    aboutSubtitle: 'SVN 工作台',
+    aboutSubtitle: 'SVN 桌面用戶端 · 每一次改動，都有跡可循。',
   },
   workspacePanel: {
     tabAll: "全部",
@@ -102,7 +104,7 @@ export default {
     title: '工作區',
     emptyWorkspace: '尚未開啟工作區',
     emptyDescription: '開啟現有 SVN 工作副本，或從儲存庫簽出新的工作副本。',
-    welcomeTitle: '歡迎使用 OrcaSVN',
+    welcomeTitle: '歡迎使用 版舟 RevBoat',
     welcomeRepository: '歡迎',
     svnClient: 'Subversion 用戶端',
     workingCopy: '工作副本',
@@ -373,6 +375,7 @@ export default {
     terminal: '終端機',
   },
   appUpdate: {
+    localBuild: '自訂版 · 透過新版安裝套件更新',
     available: '有新版本 v{version}',
     check: '檢查更新',
     checking: '正在檢查…',

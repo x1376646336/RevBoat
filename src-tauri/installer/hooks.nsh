@@ -15,7 +15,7 @@
   SendMessage 0xFFFF 0x1A 0 "STR:Environment" /TIMEOUT=5000
 !macroend
 
-; Register the install directory in the per-user PATH so `orcasvn` works from a new terminal.
+; Register the install directory in the per-user PATH so `revboat` works from a new terminal.
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro ORCASVN_UPDATE_USER_PATH "$$k.SetValue('Path',((@($$parts)+$$d) -join ';'),[Microsoft.Win32.RegistryValueKind]::ExpandString)"
 !macroend

@@ -9,7 +9,7 @@ function readManagedNames(releaseDir) {
   const manifestPath = path.join(releaseDir, manifestName)
   if (!fs.existsSync(manifestPath)) return new Set()
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
-  if (manifest.generatedBy !== 'OrcaSVN/collect-release') {
+  if (manifest.generatedBy !== 'RevBoat/collect-release') {
     throw new Error('release 目录中的发布清单不属于本项目，已停止覆盖')
   }
   const names = manifest.files.map(file => file.name)
@@ -22,18 +22,18 @@ function readManagedNames(releaseDir) {
 function collectWindowsRelease({ root, outputDir, version, startedAt, target = '', includeBundles = true }) {
   root = path.resolve(root)
   const releaseDir = path.join(root, 'release')
-  const sourceExe = path.join(outputDir, 'OrcaSVN.exe')
+  const sourceExe = path.join(outputDir, 'RevBoat.exe')
   if (!fs.statSync(sourceExe).isFile()) throw new Error(`没有找到本次构建程序：${sourceExe}`)
   if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][\w.-]+)?$/.test(version)) throw new Error('发布版本号无效')
   const architecture = target ? target.split('-')[0].replace('x86_64', 'x64').replace('aarch64', 'arm64') : process.arch
-  const portableName = `OrcaSVN-${version}-windows-${architecture}-portable.zip`
-  const sources = [{ source: sourceExe, name: 'OrcaSVN.exe' }, { source: path.join(root, 'LICENSE'), name: 'LICENSE' }]
+  const portableName = `RevBoat-${version}-windows-${architecture}-portable.zip`
+  const sources = [{ source: sourceExe, name: 'RevBoat.exe' }, { source: path.join(root, 'LICENSE'), name: 'LICENSE' }]
   if (includeBundles) {
     for (const kind of ['nsis', 'msi']) {
       const directory = path.join(outputDir, 'bundle', kind)
       if (!fs.existsSync(directory)) continue
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-        if (!entry.isFile() || !entry.name.startsWith(`OrcaSVN_${version}_`) || !/\.(exe|msi)$/i.test(entry.name)) continue
+        if (!entry.isFile() || !entry.name.startsWith(`RevBoat_${version}_`) || !/\.(exe|msi)$/i.test(entry.name)) continue
         const source = path.join(directory, entry.name)
         // 只收集本次打包更新的安装程序，避免混入旧版本或上一次未选择的格式。
         if (fs.statSync(source).mtimeMs >= startedAt - 2000) sources.push({ source, name: entry.name })
@@ -54,9 +54,9 @@ function collectWindowsRelease({ root, outputDir, version, startedAt, target = '
   try {
     for (const entry of sources) fs.copyFileSync(entry.source, path.join(stage, entry.name))
     fs.writeFileSync(path.join(stage, '使用说明.txt'), [
-      `OrcaSVN ${version} Windows 版`, '',
-      '免安装运行：双击 OrcaSVN.exe；需要 Windows WebView2 Runtime 和 SVN 命令行工具。',
-      '更新前请先退出旧版 OrcaSVN。', '',
+      `RevBoat ${version} Windows 版`, '',
+      '免安装运行：双击 RevBoat.exe；需要 Windows WebView2 Runtime 和 SVN 命令行工具。',
+      '更新前请先退出旧版 RevBoat。', '',
       '工作区支持通过资源管理器、Android Studio、IntelliJ IDEA、VS Code 或终端打开目录。',
       '非标准安装位置可在打开方式的设置中选择编辑器程序。',
       '工作区列表支持“全部 / 收藏”页签，点击目录右侧星标可收藏或取消收藏，收藏记录保存在本机。',
@@ -64,9 +64,9 @@ function collectWindowsRelease({ root, outputDir, version, startedAt, target = '
       '本目录由发布构建自动更新；release-manifest.json 记录本次构建时间及文件校验值。',
       '自行放入的其他文件会保留；不要修改自动生成的发布清单。', ''
     ].join('\r\n'), 'utf8')
-    const portableFolder = path.join(stage, `OrcaSVN-${version}-windows-${architecture}`)
+    const portableFolder = path.join(stage, `RevBoat-${version}-windows-${architecture}`)
     fs.mkdirSync(portableFolder)
-    for (const name of ['OrcaSVN.exe', 'LICENSE', '使用说明.txt']) {
+    for (const name of ['RevBoat.exe', 'LICENSE', '使用说明.txt']) {
       fs.copyFileSync(path.join(stage, name), path.join(portableFolder, name))
     }
     // 通过环境变量传递路径，避免 PowerShell 字符串拼接导致引号或命令注入问题。
@@ -83,7 +83,7 @@ function collectWindowsRelease({ root, outputDir, version, startedAt, target = '
       return { name, bytes: content.length, sha256: crypto.createHash('sha256').update(content).digest('hex') }
     })
     fs.writeFileSync(path.join(stage, manifestName), JSON.stringify({
-      generatedBy: 'OrcaSVN/collect-release', version, builtAt: new Date().toISOString(),
+      generatedBy: 'RevBoat/collect-release', version, builtAt: new Date().toISOString(),
       target: target || `windows-${process.arch}`, files
     }, null, 2) + '\n', 'utf8')
     for (const name of extras) fs.cpSync(path.join(releaseDir, name), path.join(stage, name), { recursive: true })

@@ -1,4 +1,6 @@
 export default {
+  accountUi: {"title": "SVN アカウント", "currentAccount": "現在のアカウント", "notConfigured": "アプリで未設定", "selectWorkspace": "HTTP(S) または SVN の作業コピーを選択してください。", "scopeHint": "同じサーバーでアカウント指定のない作業コピーに適用されます。検証失敗時は元のアカウントを保持します。", "edit": "アカウント / パスワードを変更", "verifySave": "接続を確認して保存", "pinnedAccount": "URL にアカウントが指定されています。別のアカウントを使用する場合は新しくチェックアウトしてください。", "updated": "アカウントを更新しました。以降の操作に適用されます。", "backToHistory": "履歴へ戻る", "binaryDiff": "バイナリ形式のため SVN では行単位の差分を表示できません。Word、Excel、PDF には文書比較ツールが必要です。"},
+  svnAuth: {"keychainHint": "ログイン成功後、認証情報を macOS キーチェーンに保存し、次回は自動ログインします。パスワードが無効になった場合は再入力が必要です。", "saveFailed": "ログインしましたが、キーチェーンに保存できませんでした。再起動後に再入力が必要になる場合があります。", "title": "SVN 認証", "username": "ユーザー名", "password": "パスワード", "retry": "ログインして再試行", "sessionHint": "認証情報はこのセッションのメモリ内にのみ保持されます。"},
   nav: {
     home: 'ホーム',
     settings: '設定',
@@ -63,7 +65,7 @@ export default {
     themeLight: 'ライト',
     themeDark: 'ダーク',
     themeAuto: '自動',
-    aboutSubtitle: 'SVN ワークベンチ',
+    aboutSubtitle: 'SVN デスクトップクライアント · すべての変更に足跡を。',
   },
   workspacePanel: {
     tabAll: "すべて",
@@ -102,7 +104,7 @@ export default {
     title: 'ワークスペース',
     emptyWorkspace: 'ワークスペースがありません',
     emptyDescription: '既存の SVN 作業コピーを開くか、新しい作業コピーをチェックアウトします。',
-    welcomeTitle: 'OrcaSVN へようこそ',
+    welcomeTitle: 'RevBoat へようこそ',
     welcomeRepository: 'ようこそ',
     svnClient: 'Subversion クライアント',
     workingCopy: '作業コピー',
@@ -373,6 +375,7 @@ export default {
     terminal: 'ターミナル',
   },
   appUpdate: {
+    localBuild: 'カスタム版 · 新しいインストーラーで更新',
     available: '新しいバージョン v{version}',
     check: '更新を確認',
     checking: '確認中…',

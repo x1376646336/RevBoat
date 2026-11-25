@@ -5,11 +5,13 @@ import { isNewerVersion } from '@/utils/version'
 
 const LATEST_RELEASE_API = 'https://api.github.com/repos/wustites/OrcaSVN/releases/latest'
 export const RELEASES_PAGE = 'https://github.com/wustites/OrcaSVN/releases'
+// A custom build must never advertise upstream installers as its own updates.
+const UPSTREAM_UPDATES_ENABLED = packageInfo.upstreamUpdatesEnabled
 const REQUEST_TIMEOUT_MS = 10_000
 
-export type UpdateCheckState = 'idle' | 'checking' | 'upToDate' | 'available' | 'failed'
+export type UpdateCheckState = 'localBuild' | 'idle' | 'checking' | 'upToDate' | 'available' | 'failed'
 
-const state = ref<UpdateCheckState>('idle')
+const state = ref<UpdateCheckState>(UPSTREAM_UPDATES_ENABLED ? 'idle' : 'localBuild')
 const latestVersion = ref<string | null>(null)
 const releaseUrl = ref(RELEASES_PAGE)
 let pending: Promise<void> | null = null
@@ -43,11 +45,12 @@ async function fetchLatestRelease(): Promise<void> {
 
 export function useUpdateCheck() {
   const checkForUpdates = () => {
+    if (!UPSTREAM_UPDATES_ENABLED) return Promise.resolve()
     pending ??= fetchLatestRelease().finally(() => { pending = null })
     return pending
   }
 
-  const openReleasePage = () => open(releaseUrl.value)
+  const openReleasePage = () => UPSTREAM_UPDATES_ENABLED ? open(releaseUrl.value) : Promise.resolve()
 
   return {
     currentVersion: packageInfo.version,

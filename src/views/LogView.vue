@@ -1,28 +1,8 @@
 <template>
   <div class="log-view">
-    <el-card class="log-card">
-      <template #header>
-        <div class="card-header">
-          <span class="card-title">
-            <el-icon><Document /></el-icon>
-            {{ $t('log.title') }}
-          </span>
-        </div>
-      </template>
-
-      <div v-if="!workspaceStore.currentPath" class="no-workspace">
-        <el-empty :description="$t('log.openWorkspaceFirst')">
-          <template #image>
-            <el-icon class="empty-icon"><Document /></el-icon>
-          </template>
-          <el-button type="primary" @click="openWorkspace">
-            <el-icon><FolderOpened /></el-icon>
-            {{ $t('common.open') }}
-          </el-button>
-        </el-empty>
-      </div>
-
-      <div v-else ref="logScroller" class="log-content">
+    <div v-if="!workspaceStore.currentPath" class="no-workspace"><el-empty :description="$t('log.openWorkspaceFirst')"><el-button type="primary" @click="openWorkspace">{{ $t('common.open') }}</el-button></el-empty></div>
+    <template v-else>
+      <section class="history-list-pane">
         <div class="log-filters">
           <el-select
             v-model="filters.author"
@@ -48,7 +28,7 @@
             clearable
             size="small"
           />
-          <el-date-picker
+          <div class="history-date-filter"><el-date-picker
             v-model="dateRange"
             type="daterange"
             value-format="YYYY-MM-DD"
@@ -65,7 +45,7 @@
             :editable="false"
             size="small"
           />
-          <el-button type="primary" size="small" :loading="loading" @click="queryLogs">
+          </div><el-button type="primary" size="small" :loading="loading" @click="queryLogs">
             <el-icon><Search /></el-icon>
             {{ $t('log.query') }}
           </el-button>
@@ -75,172 +55,42 @@
           </el-button>
         </div>
 
-        <div class="log-query-state">
-          <span v-if="loading" class="query-status">
-            <el-icon class="is-loading"><Loading /></el-icon>
-            {{ $t('log.querying') }}
-          </span>
-          <span v-else>{{ logResultSummary }}</span>
-          <el-tag v-if="hasActiveFilters" size="small" effect="plain" type="info">
-            {{ $t('log.filtered') }}
-          </el-tag>
+
+        <div class="history-columns"><span>{{ $t('log.revision') }}</span><span>{{ $t('log.commitMessage') }}</span><span>{{ $t('log.author') }}</span><span>{{ $t('log.date') }}</span></div>
+        <div ref="logScroller" class="history-scroll" v-loading="loading" :element-loading-text="$t('log.querying')">
+          <template v-for="(entry, index) in logs" :key="entry.revision">
+            <div v-if="index === 0 || dayLabel(entry.date) !== dayLabel(logs[index - 1].date)" class="history-day">{{ dayLabel(entry.date) }}</div>
+            <button class="history-row" :class="{ selected: selectedLog?.revision === entry.revision }" :aria-pressed="selectedLog?.revision === entry.revision" @click="handleRowClick(entry)">
+              <span class="history-revision"><i></i>r{{ entry.revision }}</span><span class="history-message" :title="entry.message">{{ entry.message.split('\n')[0] || $t('common.noData') }}</span><span class="history-author" :title="entry.author">{{ entry.author }}</span><time :title="formatDate(entry.date)">{{ new Date(entry.date).toLocaleTimeString(locale, {hour: '2-digit', minute: '2-digit'}) }}</time>
+            </button>
+          </template>
+          <el-empty v-if="!loading && logs.length === 0" :description="hasActiveFilters ? $t('log.noMatchedLogs') : $t('log.noLogs')" />
         </div>
-
-        <el-table
-          :data="logs"
-          v-loading="loading"
-          :element-loading-text="$t('log.querying')"
-          style="width: 100%"
-          @row-click="handleRowClick"
-          row-key="revision"
-          stripe
-          highlight-current-row
-          class="log-table"
-        >
-          <el-table-column prop="revision" :label="$t('log.revision')" width="90" sortable align="center">
-            <template #default="{ row }">
-              <el-tag type="primary" size="small" effect="plain">r{{ row.revision }}</el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="author" :label="$t('log.author')" width="180">
-            <template #default="{ row }">
-              <div class="author-cell">
-                <el-icon><User /></el-icon>
-                <span :title="row.author">{{ row.author }}</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="date" :label="$t('log.date')" width="180" sortable>
-            <template #default="{ row }">
-              <div class="date-cell">
-                <el-icon><Calendar /></el-icon>
-                <span>{{ formatDate(row.date) }}</span>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="message" :label="$t('log.commitMessage')" min-width="220">
-            <template #default="{ row }">
-              <span class="message-text" :title="row.message">{{ row.message }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column
-            :label="$t('log.changedFiles')"
-            width="150"
-            align="center"
-            class-name="changed-files-column"
-            label-class-name="changed-files-header"
-          >
-            <template #default="{ row }">
-              <el-tag size="small" effect="plain">
-                {{ row.changed_paths?.length || 0 }}
-              </el-tag>
-            </template>
-          </el-table-column>
-        </el-table>
-        <el-empty
-          v-if="!loading && logs.length === 0"
-          class="empty-log-result"
-          :description="hasActiveFilters ? $t('log.noMatchedLogs') : $t('log.noLogs')"
-        >
-          <el-button v-if="hasActiveFilters" size="small" @click="resetFilters">
-            <el-icon><RefreshLeft /></el-icon>
-            {{ $t('log.clearFilters') }}
-          </el-button>
-        </el-empty>
-        <div class="log-pagination">
-          <el-button size="small" :disabled="loading || pageIndex === 0" @click="changePage(pageIndex - 1)">
-            {{ $t('log.previousPage') }}
-          </el-button>
-          <span>{{ $t('log.pageNumber', { page: pageIndex + 1 }) }}</span>
-          <el-button size="small" :disabled="loading || !hasMore" @click="changePage(pageIndex + 1)">
-            {{ $t('log.nextPage') }}
-          </el-button>
-        </div>
-      </div>
-
-      <el-dialog
-        v-model="dialogVisible"
-        :title="$t('log.commitDetails')"
-        width="min(960px, calc(100vw - 32px))"
-        class="log-dialog"
-        destroy-on-close
-        @close="onDialogClose"
-      >
-        <div v-if="selectedLog" class="log-detail">
-          <el-descriptions :column="1" border class="detail-descriptions">
-            <el-descriptions-item :label="$t('log.revision')">
-              <el-tag type="primary" size="small">r{{ selectedLog.revision }}</el-tag>
-            </el-descriptions-item>
-            <el-descriptions-item :label="$t('log.author')">
-              <div class="author-info">
-                <el-icon><User /></el-icon>
-                <span>{{ selectedLog.author }}</span>
-              </div>
-            </el-descriptions-item>
-            <el-descriptions-item :label="$t('log.date')">
-              <div class="date-info">
-                <el-icon><Calendar /></el-icon>
-                <span>{{ formatDate(selectedLog.date) }}</span>
-              </div>
-            </el-descriptions-item>
-          </el-descriptions>
-
-          <div class="commit-message-section">
-            <h4 class="message-title">
-              <el-icon><ChatLineSquare /></el-icon>
-              {{ $t('log.commitMessage') }}
-            </h4>
-            <div class="commit-message">
-              <pre>{{ selectedLog.message }}</pre>
-            </div>
-          </div>
-
-          <div class="changed-files-section">
-            <h4 class="message-title">
-              <el-icon><Document /></el-icon>
-              {{ $t('log.changedFiles') }}
-            </h4>
-            <el-table
-              :data="selectedLog.changed_paths || []"
-              max-height="260"
-              stripe
-              class="changed-files-table"
-              @row-dblclick="openChangedPathDiff"
-            >
-              <el-table-column :label="$t('commit.status')" width="96" align="center">
-                <template #default="{ row }">
-                  <el-tag size="small" :type="getActionTagType(row.action)">
-                    {{ getActionLabel(row.action) }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-              <el-table-column :label="$t('commit.file')" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <span class="file-path">{{ row.path }}</span>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-        </div>
-        
-        <template #footer>
-          <el-button @click="dialogVisible = false">
-            {{ $t('common.close') }}
-          </el-button>
-        </template>
-      </el-dialog>
-    </el-card>
+        <footer class="history-pagination"><span>{{ loading ? $t('log.querying') : logResultSummary }}</span><div><el-button text :disabled="loading || pageIndex === 0" @click="changePage(pageIndex - 1)">{{ $t('log.previousPage') }}</el-button><span>{{ $t('log.pageNumber', { page: pageIndex + 1 }) }}</span><el-button text :disabled="loading || !hasMore" @click="changePage(pageIndex + 1)">{{ $t('log.nextPage') }}</el-button></div></footer>
+      </section>
+      <aside class="history-inspector">
+        <template v-if="selectedLog">
+          <div class="history-detail-header"><div class="history-version"><strong>r{{ selectedLog.revision }}</strong><el-button text :aria-label="$t('desktop.copyRevision')" :title="$t('desktop.copyRevision')" @click="copyRevision"><el-icon><CopyDocument /></el-icon></el-button></div><h2>{{ selectedLog.message.split('\n')[0] || $t('common.noData') }}</h2><p v-if="selectedLog.message.includes('\n')" class="history-message-body">{{ selectedLog.message.slice(selectedLog.message.indexOf('\n') + 1).trim() }}</p><div class="history-person"><span>{{ selectedLog.author.slice(0,1).toUpperCase() || '?' }}</span><div><strong>{{ selectedLog.author }}</strong><small>{{ formatDate(selectedLog.date) }}</small></div></div></div>
+          <div class="history-files-title">{{ $t('log.changedFiles') }} · {{ selectedLog.changed_paths?.length || 0 }}</div>
+          <div class="history-files"><button v-for="file in selectedLog.changed_paths" :key="file.path" class="history-file" :class="{ active: selectedChangedPath?.path === file.path }" @click="selectChangedPath(file)" @dblclick="openChangedPathDiff(file)" :title="file.path"><span class="history-status" :class="file.action" :title="getActionLabel(file.action)">{{ file.action }}</span><span class="history-file-name"><strong>{{ fileName(file.path) }}</strong><small>{{ parentPath(file.path) }}</small></span></button></div>
+          <div v-if="selectedChangedPath" class="history-preview"><header><strong :title="selectedChangedPath.path">{{ fileName(selectedChangedPath.path) }}</strong><el-button text size="small" @click="openChangedPathDiff(selectedChangedPath)">{{ $t('desktop.fullDiff') }}</el-button></header><div v-if="previewLoading" class="preview-notice">{{ $t('common.loading') }}</div><div v-else-if="previewError" class="preview-notice error">{{ previewError }}</div><template v-else-if="previewText"><div class="preview-stats"><span>+{{ previewStats.added }}</span><span>−{{ previewStats.removed }}</span></div><DiffViewer :text="previewText" compact @stats="previewStats = $event" /></template><div v-else class="preview-notice">{{ $t('diff.noDiff') }}</div></div>
+        </template><el-empty v-else :description="$t('desktop.selectRevision')" />
+      </aside>
+    </template>
   </div>
 </template>
-
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onUnmounted, reactive, ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnCurrentUser, svnLog } from '@/api/svn'
+import { repositoryDiffTarget } from '@/utils/diffTarget'
+import { svnCurrentUser, svnLog, svnDiff } from '@/api/svn'
 import type { SvnLogEntry, SvnLogPath } from '@/types'
 import { useI18n } from 'vue-i18n'
 import { useWorkspace } from '@/composables/useWorkspace'
 import { useRouter } from 'vue-router'
+import DiffViewer from '@/components/DiffViewer.vue'
+import { writeClipboardText } from '@/utils/clipboard'
+import { ElMessage } from 'element-plus/es/components/message/index'
 
 const { t, locale } = useI18n()
 const router = useRouter()
@@ -257,7 +107,6 @@ const pageIndex = ref(0)
 const pageCursors = ref<(number | undefined)[]>([undefined])
 const FILTER_RELOAD_DELAY_MS = 250
 let filterReloadTimer: number | undefined
-const dialogVisible = ref(false)
 const selectedLog = ref<SvnLogEntry | null>(null)
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000
 const LOG_CACHE_KEY_VERSION = 'v4'
@@ -457,6 +306,7 @@ const fetchLogPage = async (index: number, refreshCache = false) => {
     if (generation !== requestGeneration || requestedPath !== workspaceStore.currentPath) return
     if (!cached) setCachedLogPage(requestedPath, limit, batch, startRev, endRev, kw, author, df, dt)
     logs.value = batch.slice(0, DEFAULT_LOG_PAGE_SIZE)
+    selectedLog.value = logs.value.find(entry => entry.revision === selectedLog.value?.revision) || logs.value[0] || null
     hasMore.value = batch.length > DEFAULT_LOG_PAGE_SIZE
     pageIndex.value = index
     if (hasMore.value) pageCursors.value[index + 1] = logs.value[logs.value.length - 1].revision - 1
@@ -482,6 +332,7 @@ const reloadLogs = async (refreshCache = false, restart = false) => {
   pageIndex.value = 0
   pageCursors.value = [undefined]
   logs.value = []
+  selectedLog.value = null
   hasMore.value = false
   await fetchLogPage(0, refreshCache)
 }
@@ -513,55 +364,39 @@ const queryLogs = () => {
 
 const handleRowClick = (row: SvnLogEntry) => {
   selectedLog.value = row
-  dialogVisible.value = true
 }
 
-let preserveLogSelection = false
+
 
 const openChangedPathDiff = (row: SvnLogPath) => {
   if (!selectedLog.value || !workspaceStore.svnInfo) return
 
-  preserveLogSelection = true
   sessionStorage.setItem('orca_log_selection', String(selectedLog.value.revision))
 
   const repositoryRoot = workspaceStore.svnInfo.repository_root.replace(/\/+$/, '')
   const revision = selectedLog.value.revision
-  const currentRepoPath = row.path.startsWith('/') ? row.path : `/${row.path}`
-  const currentPegRev = row.action === 'D' ? Math.max(0, revision - 1) : revision
-
-  const allFiles = (selectedLog.value.changed_paths || []).map(p => {
-    const repoPath = p.path.startsWith('/') ? p.path : `/${p.path}`
-    const pegRev = p.action === 'D' ? Math.max(0, revision - 1) : revision
-    return {
-      display: repoPath,
-      query: `${repositoryRoot}${repoPath}@${pegRev}`,
-    }
-  })
-
-  const currentIndex = allFiles.findIndex(f => f.query === `${repositoryRoot}${currentRepoPath}@${currentPegRev}`)
+  const currentTarget = repositoryDiffTarget(repositoryRoot, row.path, revision, row.action)
+  const allFiles = (selectedLog.value.changed_paths || []).map(p => ({
+    display: p.path,
+    query: repositoryDiffTarget(repositoryRoot, p.path, revision, p.action),
+  }))
+  const currentIndex = allFiles.findIndex(f => f.query === currentTarget)
 
   sessionStorage.setItem('orca_diff_files', JSON.stringify({
     source: 'log',
     files: allFiles.map(f => f.query),
     displayNames: allFiles.map(f => f.display),
-    current: `${repositoryRoot}${currentRepoPath}@${currentPegRev}`,
+    current: currentTarget,
     index: Math.max(0, currentIndex),
   }))
 
-  dialogVisible.value = false
   router.push({
     name: 'diff',
     query: {
-      path: `${repositoryRoot}${currentRepoPath}@${currentPegRev}`,
+      path: currentTarget,
       revision: String(revision),
     },
   })
-}
-
-const onDialogClose = () => {
-  if (!preserveLogSelection) {
-    sessionStorage.removeItem('orca_log_selection')
-  }
 }
 
 const resetFilters = () => {
@@ -578,16 +413,6 @@ const getActionLabel = (action: string) => {
   return translated === key ? action || t('common.noData') : translated
 }
 
-const getActionTagType = (action: string) => {
-  switch (action) {
-    case 'A': return 'success'
-    case 'D': return 'danger'
-    case 'M': return 'warning'
-    case 'R': return 'primary'
-    default: return 'info'
-  }
-}
-
 const formatDate = (dateStr: string): string => {
   if (!dateStr) return ''
   const date = new Date(dateStr)
@@ -598,6 +423,9 @@ watch(
   () => workspaceStore.currentPath,
   (path, oldPath) => {
     if (path && path !== oldPath) {
+      requestGeneration += 1
+      selectedLog.value = null
+      loading.value = false
       currentAuthor.value = ''
       loadCurrentAuthor(path)
       reloadLogs(true)
@@ -606,6 +434,7 @@ watch(
       requestGeneration += 1
       authorRequestGeneration += 1
       logs.value = []
+      selectedLog.value = null
       currentAuthor.value = ''
       hasMore.value = true
       loading.value = false
@@ -623,18 +452,16 @@ watch(
 
 onActivated(() => {
   const saved = sessionStorage.getItem('orca_log_selection')
-  if (saved && !dialogVisible.value) {
+  if (saved) {
     const revision = Number(saved)
     if (!isNaN(revision)) {
       const log = logs.value.find(l => l.revision === revision)
       if (log) {
         selectedLog.value = log
-        dialogVisible.value = true
       }
     }
     sessionStorage.removeItem('orca_log_selection')
   }
-  preserveLogSelection = false
 })
 
 onUnmounted(() => {
@@ -644,330 +471,46 @@ onUnmounted(() => {
   }
 })
 
+
+const selectedChangedPath = ref<SvnLogPath | null>(null)
+const previewText = ref('')
+const previewError = ref('')
+const previewLoading = ref(false)
+const previewStats = ref({ added: 0, removed: 0 })
+let previewGeneration = 0
+const dayLabel = (date: string) => date ? new Date(date).toLocaleDateString(locale.value, { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' }) : t('common.noData')
+const fileName = (path: string) => path.split('/').pop() || path
+const parentPath = (path: string) => path.slice(0, path.lastIndexOf('/')) || '/'
+async function copyRevision() {
+  if (!selectedLog.value) return
+  try { await writeClipboardText(String(selectedLog.value.revision)) } catch (error) { ElMessage.error(String(error)) }
+}
+async function selectChangedPath(path: SvnLogPath | null) {
+  const generation = ++previewGeneration
+  selectedChangedPath.value = path
+  previewText.value = ''
+  previewError.value = ''
+  previewStats.value = { added: 0, removed: 0 }
+  previewLoading.value = false
+  const entry = selectedLog.value
+  const workspace = workspaceStore.currentPath
+  const root = workspaceStore.svnInfo?.repository_root.replace(/\/+$/, '')
+  if (!path || !entry || !workspace || !root) return
+  previewLoading.value = true
+  try {
+    const result = await svnDiff(workspace, repositoryDiffTarget(root, path.path, entry.revision, path.action), entry.revision)
+    if (generation === previewGeneration && workspace === workspaceStore.currentPath) previewText.value = result.diff
+  } catch (error) {
+    if (generation === previewGeneration) previewError.value = String(error)
+  } finally { if (generation === previewGeneration) previewLoading.value = false }
+}
+watch(selectedLog, log => { void selectChangedPath(log?.changed_paths?.[0] || null) })
+
 </script>
 
 <style scoped>
-.log-view {
-  height: 100%;
-}
-
-.log-card {
-  height: 100%;
-  border-radius: var(--app-radius-lg);
-}
-
-:deep(.log-card > .el-card__body) {
-  display: flex;
-  flex-direction: column;
-  height: calc(100% - 57px);
-  min-height: 0;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.card-title {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--app-spacing-sm);
-  font-weight: 700;
-}
-
-.header-actions {
-  align-items: center;
-  display: flex;
-  gap: var(--app-spacing-sm);
-}
-
-.loaded-count {
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-xs);
-}
-
-.no-workspace {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--app-spacing-xl) 0;
-}
-
-.empty-icon {
-  font-size: 64px;
-  color: var(--el-text-color-placeholder);
-}
-
-.log-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.log-filters {
-  display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr) 380px auto auto;
-  gap: var(--app-spacing-sm);
-  margin-bottom: var(--app-spacing);
-}
-
-.author-select {
-  width: 100%;
-}
-
-.author-select :deep(.el-select__wrapper) {
-  height: 40px;
-  min-height: 40px;
-}
-
-.author-select :deep(.el-select__wrapper.is-focused),
-.author-select :deep(.el-select__wrapper.is-focus) {
-  box-shadow: 0 0 0 2px var(--md-sys-color-primary) inset;
-}
-
-.author-select :deep(.el-select__input),
-.author-select :deep(.el-select__input:focus),
-.author-select :deep(.el-select__input:focus-visible) {
-  border: 0;
-  outline: none;
-  box-shadow: none;
-}
-
-.log-date-range {
-  width: 100%;
-  min-width: 0;
-}
-
-.log-date-range :deep(.el-range-input) {
-  color: var(--el-text-color-primary);
-}
-
-.log-date-range :deep(.el-range-input::placeholder) {
-  color: var(--el-text-color-placeholder);
-}
-
-.log-date-range :deep(.el-range-separator),
-.log-date-range :deep(.el-range__icon),
-.log-date-range :deep(.el-range__close-icon) {
-  color: var(--el-text-color-secondary);
-}
-
-.log-query-state {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  gap: var(--app-spacing-sm);
-  margin: -4px 0 var(--app-spacing-sm);
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-sm);
-}
-
-.query-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--md-sys-color-primary);
-  font-weight: 600;
-}
-
-.log-table {
-  border-radius: var(--app-radius-md);
-  overflow: hidden;
-}
-
-.log-table :deep(.changed-files-column .cell),
-.log-table :deep(.changed-files-header .cell) {
-  white-space: nowrap;
-}
-
-.log-pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  color: var(--el-text-color-secondary);
-  font-size: var(--app-font-size-xs);
-  text-align: center;
-}
-
-.empty-log-result {
-  padding: var(--app-spacing-lg) 0 var(--app-spacing-xl);
-}
-
-:global(.theme-dark) .log-query-state,
-:global(.dark) .log-query-state {
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-:global(.theme-dark) .query-status,
-:global(.dark) .query-status {
-  color: var(--md-sys-color-on-primary-container);
-}
-
-:global(.theme-dark) .log-table,
-:global(.dark) .log-table {
-  --el-table-border-color: rgba(115, 115, 115, .12);
-  border: 1px solid rgba(115, 115, 115, .1);
-}
-
-:global(.theme-dark) .log-table :deep(.el-table__inner-wrapper::before),
-:global(.theme-dark) .log-table :deep(.el-table__inner-wrapper::after),
-:global(.dark) .log-table :deep(.el-table__inner-wrapper::before),
-:global(.dark) .log-table :deep(.el-table__inner-wrapper::after) {
-  background-color: rgba(115, 115, 115, .1);
-}
-
-:global(.theme-dark) .empty-log-result,
-:global(.dark) .empty-log-result {
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-.author-cell,
-.date-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--el-text-color-regular);
-}
-
-.author-cell .el-icon,
-.date-cell .el-icon {
-  flex-shrink: 0;
-  font-size: var(--app-font-size-body);
-  color: var(--el-text-color-secondary);
-}
-
-.author-cell span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.message-text {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.log-dialog {
-  border-radius: var(--app-radius-xl);
-}
-
-.log-detail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--app-spacing-lg);
-}
-
-.detail-descriptions {
-  border-radius: var(--app-radius-md);
-  overflow: hidden;
-}
-
-.author-info,
-.date-info {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.author-info span,
-.date-info span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.author-info .el-icon,
-.date-info .el-icon {
-  flex-shrink: 0;
-}
-
-.author-info .el-icon,
-.date-info .el-icon {
-  font-size: var(--app-font-size-body);
-  color: var(--el-text-color-secondary);
-}
-
-.commit-message-section {
-  margin-top: var(--app-spacing-sm);
-}
-
-.changed-files-section {
-  margin-top: var(--app-spacing-sm);
-}
-
-.message-title {
-  display: flex;
-  align-items: center;
-  gap: var(--app-spacing-sm);
-  margin-bottom: var(--app-spacing);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--el-text-color-primary);
-}
-
-.message-title .el-icon {
-  font-size: var(--app-font-size-title);
-  color: var(--md-sys-color-primary);
-}
-
-.commit-message {
-  background: var(--el-fill-color-light);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--app-radius-md);
-  padding: var(--app-spacing-md);
-  overflow: auto;
-}
-
-.commit-message pre {
-  margin: 0;
-  font-family: inherit;
-  font-size: var(--app-font-size-body);
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-all;
-  color: var(--el-text-color-primary);
-}
-
-.changed-files-table {
-  border-radius: var(--app-radius-md);
-  overflow: hidden;
-}
-
-.changed-files-table :deep(.el-table__row) {
-  cursor: pointer;
-}
-
-.file-path {
-  font-family: var(--app-font-family-mono);
-  font-size: var(--app-font-size-label);
-}
-
-@media (max-width: 860px) {
-  .card-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--app-spacing-sm);
-  }
-  
-  .header-actions {
-    width: 100%;
-  }
-
-  .log-filters {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 640px) {
-  .log-filters {
-    grid-template-columns: 1fr;
-  }
-}
+.log-view{height:100%;min-height:0;display:flex;background:var(--md-sys-color-surface-container-lowest)}.no-workspace{margin:auto}.history-list-pane{flex:1;min-width:0;display:flex;flex-direction:column}.log-filters{display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:8px 12px;border-bottom:1px solid var(--md-sys-color-outline-variant);min-height:44px}.log-filters>.el-input{order:-1;flex:1;min-width:140px}.log-filters :deep(.el-input__wrapper){background:var(--md-sys-color-surface-container)}.author-select{width:105px}.log-date-range{max-width:220px!important;flex:0 1 220px!important}.log-filters .el-button+.el-button{margin:0}.history-columns,.history-row{display:grid;grid-template-columns:74px minmax(0,1fr) 85px 54px;align-items:center;gap:10px;padding:0 16px}.history-columns{height:30px;font-size:11px;font-weight:550;color:var(--md-sys-color-on-surface-variant);border-bottom:1px solid var(--md-sys-color-outline-variant)}.history-columns span:last-child{text-align:right}.history-scroll{flex:1;min-height:0;overflow:auto}.history-day{font-size:11px;color:var(--md-sys-color-on-surface-variant);padding:6px 16px;background:var(--md-sys-color-surface-container-low);border-bottom:1px solid var(--md-sys-color-outline-variant)}.history-row{width:100%;height:35px;background:none;border:0;border-bottom:1px solid color-mix(in srgb,var(--md-sys-color-outline-variant) 65%,transparent);text-align:left;cursor:pointer;font-size:12px}.history-row:hover{background:var(--md-sys-color-primary-container)}.history-row.selected{background:var(--desktop-selected);color:var(--desktop-selected-text)}.history-revision{position:relative;display:flex;gap:14px;align-items:center;font-family:var(--app-font-family-mono)}.history-revision:before{content:'';position:absolute;left:4px;top:-12px;bottom:-12px;width:1px;background:var(--md-sys-color-outline-variant)}.history-revision i{position:relative;z-index:1;width:9px;height:9px;border-radius:50%;border:1.5px solid #8c9eb2;background:var(--md-sys-color-surface-container-lowest)}.selected .history-revision i{background:#fff;border-color:#fff}.history-message,.history-author{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.history-author,.history-row time{font-size:11px;color:var(--md-sys-color-on-surface-variant)}.history-row time{text-align:right}.selected .history-author,.selected time{color:#e1e9f2}.history-pagination{display:flex;justify-content:space-between;align-items:center;gap:8px;height:34px;padding:0 12px;border-top:1px solid var(--md-sys-color-outline-variant);color:var(--md-sys-color-on-surface-variant);font-size:10px}.history-pagination>div{display:flex;gap:5px;align-items:center}.history-pagination .el-button{min-height:26px;padding:3px 5px;font-size:10px}.history-inspector{width:32%;min-width:300px;max-width:430px;border-left:1px solid var(--md-sys-color-outline-variant);background:var(--md-sys-color-surface-container-low);overflow:auto}.history-detail-header{padding:16px;border-bottom:1px solid var(--md-sys-color-outline-variant)}.history-version{display:flex;align-items:center;gap:5px}.history-version>strong{font-size:20px;color:var(--md-sys-color-primary);font-family:var(--app-font-family-mono)}.history-detail-header h2{font-size:14px;line-height:1.65;font-weight:600;margin:12px 0 8px;overflow-wrap:anywhere}.history-message-body{font-size:12px;color:var(--md-sys-color-on-surface-variant);white-space:pre-wrap;line-height:1.8;overflow-wrap:anywhere}.history-person{display:flex;gap:9px;align-items:center;margin-top:17px;font-size:11px}.history-person>span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--md-sys-color-primary-container);color:var(--md-sys-color-primary);font-size:13px}.history-person strong{font-weight:550}.history-person small{display:block;font-size:10px;color:var(--md-sys-color-on-surface-variant);margin-top:3px}.history-files-title{font-size:11px;font-weight:550;padding:12px 16px}.history-files{padding:0 8px}.history-file{display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;border-radius:6px;text-align:left;padding:8px;cursor:pointer}.history-file:hover,.history-file.active{background:var(--md-sys-color-primary-container)}.history-status{display:grid;place-items:center;width:18px;height:19px;border-radius:4px;background:var(--app-color-status-modified-bg);color:var(--app-color-status-modified-text);font-size:10px;flex-shrink:0;font-weight:650}.history-status.A{background:var(--app-color-status-added-bg);color:var(--app-color-status-added-text)}.history-status.D{background:var(--app-color-status-error-bg);color:var(--app-color-status-error-text)}.history-file-name{min-width:0}.history-file-name strong,.history-file-name small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-file-name strong{font-weight:500;font-size:12px}.history-file-name small{color:var(--md-sys-color-on-surface-variant);font-size:10px;margin-top:2px}.history-preview{margin:16px 12px;border:1px solid var(--md-sys-color-outline-variant);border-radius:7px;overflow:hidden;background:var(--md-sys-color-surface-container-lowest)}.history-preview>header{display:flex;align-items:center;justify-content:space-between;padding:5px 9px;border-bottom:1px solid var(--md-sys-color-outline-variant);gap:8px;font-size:11px}.history-preview>header strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-preview :deep(.diff-viewer){height:320px}.preview-notice{padding:20px;font-size:11px;color:var(--md-sys-color-on-surface-variant);overflow-wrap:anywhere}.preview-notice.error{color:var(--md-sys-color-error)}.preview-stats{display:flex;gap:12px;padding:5px 10px;font-size:11px}.preview-stats span:first-child{color:var(--md-sys-color-success)}.preview-stats span:last-child{color:var(--md-sys-color-error)}
+@media(max-width:1050px){.history-inspector{min-width:260px;width:35%}.history-columns,.history-row{grid-template-columns:58px minmax(0,1fr) 62px;gap:6px;padding:0 12px}.history-row time,.history-columns>span:last-child{display:none}.log-date-range{max-width:190px!important;flex-basis:190px!important}}
+.history-date-filter{flex:0 0 220px;min-width:0}.history-date-filter :deep(.el-date-editor){width:100%!important;min-width:0!important;font-size:11px}.history-date-filter :deep(.el-range-input){font-size:11px}.history-preview :deep(.diff-viewer){border:0;border-radius:0}
+@media(max-width:1050px){.history-date-filter{flex-basis:190px}}
 </style>
