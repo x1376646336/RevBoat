@@ -6,6 +6,13 @@ test('accepts stable release tags when package versions match', () => {
   assert.equal(validateRelease('v0.6.3', { npm: '0.6.3', cargo: '0.6.3', tauri: '0.6.3' }), '0.6.3')
 })
 
+test('date-only tag error suggests the actual package version', () => {
+  assert.throws(
+    () => validateRelease('v20261125', { 'package.json': '0.6.6' }),
+    error => /v20261125/.test(error.message) && /use v0\.6\.6/.test(error.message)
+  )
+})
+
 test('rejects prerelease, malformed and leading-zero stable tags', () => {
   for (const tag of ['v0.6.3-rc.4', '0.6.3', 'v0.6', 'v00.6.3', 'v0.06.3', 'v0.6.03', undefined]) {
     assert.throws(() => validateRelease(tag, {}), /stable release tag/)

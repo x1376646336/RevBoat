@@ -12,6 +12,8 @@ CI 的红色失败只说明对应检查未通过。普通代码推送不会直�
 
 正式标签使用 `vX.Y.Z`；预发布标签使用 `vX.Y.Z-alpha.N`、`beta.N` 或 `rc.N`，见[预发布流程](prerelease.md)。不要移动已公开版本的标签。
 
+**当前项目版本为 `0.6.6`，对应标签为 `v0.6.6`。** `v20261125` 这样的纯日期标签无法通过版本校验；日期可以写在 Release 标题或说明中。如果已经误建并公开了日期标签，保留原记录，使用匹配软件版本且尚未使用的新标签触发构建。仅点击旧任务的 Re-run 不会更换标签。
+
 ## 发布前
 
 将 `package.json`、`package-lock.json` 顶层及根包版本、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 的 RevBoat 包版本、`src-tauri/tauri.conf.json` 统一为正式版本。更新用户文档及 `docs/releases/vX.Y.Z.md`；发布流水线从该文件读取公开更新说明。
@@ -19,7 +21,7 @@ CI 的红色失败只说明对应检查未通过。普通代码推送不会直�
 在项目根目录运行：
 
 ```bash
-RELEASE_TAG=v0.6.3 node scripts/validate-release.cjs
+RELEASE_TAG=v0.6.6 node scripts/validate-release.cjs
 npm run check
 ```
 
@@ -28,9 +30,11 @@ npm run check
 确认发布范围并提交、推送到 `main` 后创建标签：
 
 ```bash
-git tag -a v0.6.3 -m "RevBoat v0.6.3"
-git push origin v0.6.3
+git tag -a v0.6.6 -m "RevBoat v0.6.6"
+git push origin v0.6.6
 ```
+
+上面的版本号适用于本次发布；后续发布先同步更新所有版本文件和发布说明，再使用对应的新标签。推送标签会自动创建草稿，等待三个系统打包成功后公开；无需先在 GitHub 手动公开 Release。
 
 ## 自动流程
 

@@ -2,7 +2,11 @@ const { readVersions } = require('./validate-prerelease.cjs')
 
 function validateRelease(tag, versions) {
   if (!/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag || '')) {
-    throw new Error('Use a stable release tag such as v0.6.3.')
+    const current = versions['package.json']
+    const hint = /^\d+\.\d+\.\d+$/.test(current || '')
+      ? ` Current package.json version is ${current}; use v${current} when all package versions match.`
+      : ''
+    throw new Error(`Invalid stable release tag ${JSON.stringify(tag ?? '(missing)')}. Use vX.Y.Z; date-only tags such as v20261125 are not supported.${hint}`)
   }
   const version = tag.slice(1)
   for (const [file, actual] of Object.entries(versions)) {
@@ -12,8 +16,13 @@ function validateRelease(tag, versions) {
 }
 
 if (require.main === module) {
-  const version = validateRelease(process.env.RELEASE_TAG, readVersions())
-  console.log(`Validated stable release ${version}`)
+  try {
+    const version = validateRelease(process.env.RELEASE_TAG, readVersions())
+    console.log(`Validated stable release ${version}`)
+  } catch (error) {
+    console.error(`Release validation failed: ${error.message}`)
+    process.exitCode = 1
+  }
 }
 
 module.exports = { validateRelease }
