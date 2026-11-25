@@ -1843,8 +1843,9 @@ mod tests {
             .success());
         let wc = root.join("wc");
         let url = tauri::Url::from_directory_path(&repo).unwrap();
+        let svn = test_svn();
         let run = |args: &[&str], cwd: &std::path::Path| {
-            let output = std::process::Command::new("svn")
+            let output = std::process::Command::new(&svn)
                 .args(args)
                 .current_dir(cwd)
                 .env("LC_ALL", "en_US.UTF-8")
@@ -1857,7 +1858,14 @@ mod tests {
             );
         };
         run(&["checkout", url.as_str(), wc.to_str().unwrap()], &root);
-        let name = "文档 #100%?@v1.txt";
+        // Windows forbids '?' in local filenames. Keep the Unicode, space,
+        // fragment, percent and peg-marker coverage there; Unix also tests '?'.
+        // URL-only '?' encoding remains covered by tests/diffTarget.test.cjs.
+        let name = if cfg!(windows) {
+            "文档 #100%@v1.txt"
+        } else {
+            "文档 #100%?@v1.txt"
+        };
         let local_target = format!("{name}@");
         std::fs::write(wc.join(name), "before\n").unwrap();
         run(&["add", "--", &local_target], &wc);

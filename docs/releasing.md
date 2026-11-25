@@ -1,10 +1,20 @@
 # 正式发布
 
+## 工作流区别
+
+| 工作流 | 触发条件 | 作用 |
+| --- | --- | --- |
+| `ci.yml` | 推送 `main` 或提交 Pull Request | Linux 构建检查与测试、Windows SVN Unicode 回归；不生成发行安装包 |
+| `tauri-build.yml` | 推送正式版本标签 `vX.Y.Z` | Windows、macOS、Linux 检查、打包和正式发布 |
+| `prerelease.yml` | 推送 `vX.Y.Z-rc.N` 等预发布标签 | 三平台检查、打包并发布预发布版本 |
+
+CI 的红色失败只说明对应检查未通过。普通代码推送不会直接生成三个系统的发行安装包。
+
 正式标签使用 `vX.Y.Z`；预发布标签使用 `vX.Y.Z-alpha.N`、`beta.N` 或 `rc.N`，见[预发布流程](prerelease.md)。不要移动已公开版本的标签。
 
 ## 发布前
 
-将 `package.json`、`package-lock.json` 顶层及根包版本、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 的 OrcaSVN 包版本、`src-tauri/tauri.conf.json` 统一为正式版本。更新用户文档及 `docs/releases/vX.Y.Z.md`；发布流水线从该文件读取公开更新说明。
+将 `package.json`、`package-lock.json` 顶层及根包版本、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 的 RevBoat 包版本、`src-tauri/tauri.conf.json` 统一为正式版本。更新用户文档及 `docs/releases/vX.Y.Z.md`；发布流水线从该文件读取公开更新说明。
 
 在项目根目录运行：
 
@@ -18,7 +28,7 @@ npm run check
 确认发布范围并提交、推送到 `main` 后创建标签：
 
 ```bash
-git tag -a v0.6.3 -m "OrcaSVN v0.6.3"
+git tag -a v0.6.3 -m "RevBoat v0.6.3"
 git push origin v0.6.3
 ```
 
@@ -29,7 +39,7 @@ git push origin v0.6.3
 1. 校验所有版本文件和发布说明，创建或复用 GitHub Release 草稿；已公开的同名版本拒绝重新发布。
 2. Windows、macOS、Linux 安装 SVN 测试工具，运行 `npm run check`，打包并将安装包上传至同一个草稿。
 3. 所有平台成功后才公开为正式版并标记 Latest。
-4. 尝试提交 WinGet 更新。WinGet 使用单独的 `WINGET_TOKEN`；该步骤失败不撤销已经公开的 GitHub Release，其审核和可用时间独立于 GitHub 发布。
+4. 本定制版不向上游 OrcaSVN 的 WinGet 条目发布，也不需要 `WINGET_TOKEN`。
 
 Windows 固定使用 SlikSVN 1.14.5，核验 svn 与 svnadmin 后加入 PATH；正式版本生成 NSIS EXE 和 MSI。macOS 使用 `macos-latest` 的原生架构，当前为 Apple Silicon；Linux 使用 Ubuntu x64。
 
