@@ -1,0 +1,1638 @@
+<template>
+  <div class="workspace-view">
+    <!-- 未打开工作区时的空状态 -->
+    <div v-if="!workspaceStore.currentPath" class="empty-state">
+      <aside class="welcome-sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-heading">{{ $t('workspace.quickActions') }}</div>
+          <button class="sidebar-row active" @click="openWorkspace">
+            <el-icon><FolderOpened /></el-icon>
+            {{ $t('workspace.openWorkspace') }}
+          </button>
+          <button class="sidebar-row" @click="doCheckout">
+            <el-icon><Download /></el-icon>
+            {{ $t('common.checkout') }}
+          </button>
+        </div>
+      </aside>
+      <div class="empty-content">
+        <div class="welcome-mark"><el-icon><FolderOpened /></el-icon></div>
+        <span class="welcome-eyebrow">{{ $t('workspace.svnClient') }}</span>
+        <h2>{{ $t('workspace.welcomeTitle') }}</h2>
+        <p>{{ $t('workspace.emptyDescription') }}</p>
+        <div class="empty-actions">
+          <el-button type="primary" @click="openWorkspace">
+            <el-icon><FolderOpened /></el-icon>
+            {{ $t('workspace.openWorkspace') }}
+          </el-button>
+          <el-button @click="doCheckout">
+            <el-icon><Download /></el-icon>
+            {{ $t('common.checkout') }}
+          </el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工作区主界面 -->
+    <div v-else ref="splitContainer" class="workspace-layout" :class="{ 'is-stacked': splitStacked, 'is-resizing': resizingPanels }" :style="{ '--status-panel-width': `${statusPanelWidth}px` }">
+      <!-- 左侧面板：工作区信息 -->
+      <aside class="left-panel">
+        <div class="repository-name">
+          <strong>{{ workspaceName }}</strong>
+          <button :aria-label="$t('workspace.closeWorkspace')" :title="$t('workspace.closeWorkspace')" @click="closeWorkspace"><el-icon><Close /></el-icon></button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">{{ $t('workspace.workingCopy') }}</div>
+          <button class="sidebar-row active" @click="setFilter('all')">
+            <el-icon><Document /></el-icon>
+            <span>{{ $t('workspace.fileStatus') }}</span>
+            <b>{{ workspaceStore.statusList.length }}</b>
+          </button>
+          <button class="sidebar-row" @click="doCommit">
+            <el-icon><Upload /></el-icon>
+            <span>{{ $t('common.commit') }}</span>
+          </button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">{{ $t('workspace.repository') }}</div>
+          <button class="sidebar-row" @click="router.push({ name: 'log' })">
+            <el-icon><List /></el-icon>
+            <span>{{ $t('menu.log') }}</span>
+          </button>
+          <button class="sidebar-row" @click="router.push({ name: 'blame' })">
+            <el-icon><Edit /></el-icon>
+            <span>{{ $t('menu.blame') }}</span>
+          </button>
+        </div>
+        <div v-if="workspaceStore.svnInfo" class="repository-meta">
+          <div><span>URL</span><strong>{{ workspaceStore.svnInfo.url }}</strong></div>
+          <div><span>{{ $t('workspace.revision') }}</span><strong>r{{ workspaceStore.svnInfo.revision }}</strong></div>
+        </div>
+        <div class="sidebar-actions">
+          <button @click="doCleanup"><el-icon><Brush /></el-icon>{{ $t('common.cleanup') }}</button>
+        </div>
+      </aside>
+
+      <!-- 中间面板：文件列表 -->
+      <main class="center-panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <el-icon><List /></el-icon>
+            {{ $t('workspace.fileStatus') }}
+          </span>
+          <div class="header-actions">
+            <el-button text size="small" :aria-label="$t('menu.refresh')" :title="$t('menu.refresh')" @click="refreshStatus" :loading="workspaceStore.isLoading">
+              <el-icon><Refresh /></el-icon>
+            </el-button>
+          </div>
+        </div>
+
+        <!-- 文件状态统计 -->
+        <div class="status-summary">
+          <button type="button" class="status-badge modified" :class="{ active: filter === 'modified' }" :aria-pressed="filter === 'modified'" @click="setFilter('modified')">
+            <span class="badge-count">{{ workspaceStore.changedCount }}</span>
+            <span class="badge-label">{{ $t('workspace.statusChanged') }}</span>
+          </button>
+          <button type="button" class="status-badge unversioned" :class="{ active: filter === 'added' }" :aria-pressed="filter === 'added'" @click="setFilter('added')">
+            <span class="badge-count">{{ workspaceStore.unversionedCount }}</span>
+            <span class="badge-label">{{ $t('workspace.statusUnversioned') }}</span>
+          </button>
+          <button type="button" class="status-badge conflicted" :class="{ active: filter === 'conflicted' }" :aria-pressed="filter === 'conflicted'" @click="setFilter('conflicted')">
+            <span class="badge-count">{{ workspaceStore.conflictedCount }}</span>
+            <span class="badge-label">{{ $t('status.conflicted') }}</span>
+          </button>
+          <button type="button" class="status-badge missing" :class="{ active: filter === 'missing' }" :aria-pressed="filter === 'missing'" @click="setFilter('missing')">
+            <span class="badge-count">{{ workspaceStore.missingCount }}</span>
+            <span class="badge-label">{{ $t('status.missing') }}</span>
+          </button>
+          <button type="button" class="status-badge all" :class="{ active: filter === 'all' }" :aria-pressed="filter === 'all'" @click="setFilter('all')">
+            <span class="badge-count">{{ workspaceStore.statusList.length }}</span>
+            <span class="badge-label">{{ $t('common.all') }}</span>
+          </button>
+        </div>
+
+        <div v-if="workspaceStore.statusIsStale" class="cached-status-notice" role="status">
+          {{ $t('workspace.cachedStatus') }}<span v-if="workspaceStore.isLoading"> · {{ $t('common.loading') }}</span>
+        </div>
+
+        <!-- 文件列表 -->
+        <div class="file-list" :aria-busy="workspaceStore.isLoading">
+          <GlassLoading :active="workspaceStore.isLoading && !workspaceStore.statusIsStale && workspaceStore.statusList.length === 0" :label="$t('common.loading')" />
+          <div v-if="workspaceStore.isLoading && !workspaceStore.statusIsStale && workspaceStore.statusList.length === 0" class="loading-files">
+            <el-skeleton :rows="6" />
+          </div>
+          <VirtualViewport v-else-if="filteredFiles.length" ref="fileViewport" class="workspace-files"
+            :item-count="groupedFiles.rows.length" :row-height="fileRowHeight"
+            :reset-key="`${workspaceStore.currentPath}|${filter}`" role="list" :aria-label="$t('diff.fileList')">
+            <template #default="{ start, end }">
+              <template v-for="row in groupedFiles.rows.slice(start, end)" :key="row.key">
+                <div v-if="row.kind === 'group'" class="changelist-header" role="presentation" :style="{ height: `${fileRowHeight}px` }">
+                  <span class="changelist-name" role="heading" aria-level="3" :title="row.name ?? t('workspace.ungrouped')">
+                    <el-icon><FolderOpened /></el-icon>{{ row.name ?? t('workspace.ungrouped') }}
+                  </span>
+                  <span class="changelist-count" :aria-label="t('workspace.changelistCount', { count: row.count })">{{ row.count }}</span>
+                </div>
+                <div
+                  v-else
+                  class="file-item"
+                  :data-index="row.fileIndex"
+                  role="listitem"
+                  :aria-posinset="row.fileIndex + 1"
+                  :aria-setsize="filteredFiles.length"
+                  :style="{ height: `${fileRowHeight}px` }"
+                  :class="{ selected: selectedFile === row.file.path }"
+                  @click="selectFile(row.file)"
+                  @contextmenu.prevent.stop="openFileContextMenu($event, row.file)"
+                >
+                  <span class="file-status" :class="getStatusClass(row.file.status_code)">
+                    {{ getStatusLabel(row.file.status_code) }}
+                  </span>
+                  <button
+                    type="button"
+                    class="file-path"
+                    :title="row.file.path"
+                    :aria-label="`${row.file.path}, ${getStatusLabel(row.file.status_code)}`"
+                    :aria-pressed="selectedFile === row.file.path"
+                    @click.stop="selectFile(row.file)"
+                    @keydown.down.prevent="focusFile(row.fileIndex + 1)"
+                    @keydown.up.prevent="focusFile(row.fileIndex - 1)"
+                    @keydown.home.prevent="focusFile(0)"
+                    @keydown.end.prevent="focusFile(filteredFiles.length - 1)"
+                  >{{ row.file.path }}</button>
+                  <div class="file-actions">
+                    <el-tooltip :content="$t('common.diff')" placement="top" :show-after="150">
+                      <span class="file-action-trigger" :title="$t('common.diff')" @click.stop>
+                        <el-button text size="small" :aria-label="$t('common.diff')" @click="viewDiff(row.file.path)">
+                          <el-icon><Connection /></el-icon>
+                        </el-button>
+                      </span>
+                    </el-tooltip>
+                    <el-tooltip :content="fileActionLabel(row.file)" placement="top" :show-after="150">
+                      <span class="file-action-trigger" :title="fileActionLabel(row.file)" @click.stop>
+                        <el-button text size="small" type="danger" :aria-label="fileActionLabel(row.file)"
+                          :disabled="pendingFileAction !== null || workspaceStore.statusIsStale" @click="handleFileAction(row.file)">
+                          <el-icon><Delete v-if="row.file.status_code === 'unversioned'" /><RefreshLeft v-else /></el-icon>
+                        </el-button>
+                      </span>
+                    </el-tooltip>
+                  </div>
+                </div>
+              </template>
+            </template>
+          </VirtualViewport>
+          <div v-if="!workspaceStore.isLoading && filteredFiles.length === 0" class="empty-files">
+            <el-icon><CircleCheck /></el-icon>
+            <span>{{ workspaceStore.statusList.length === 0 ? $t('workspace.noChanges') : $t('workspace.noMatchingFiles') }}</span>
+          </div>
+        </div>
+        <div
+          v-if="fileContextMenu.visible"
+          class="file-context-menu"
+          :style="{ left: `${fileContextMenu.x}px`, top: `${fileContextMenu.y}px` }"
+          @click.stop
+          @contextmenu.prevent.stop
+        >
+          <button type="button" class="context-menu-item" @click="revealSelectedFile">
+            <el-icon><FolderOpened /></el-icon>
+            <span>{{ $t('workspace.openInExplorer') }}</span>
+          </button>
+          <button type="button" class="context-menu-item" @click="copySelectedFilePath('relative')">
+            <el-icon><CopyDocument /></el-icon>
+            <span>{{ $t('workspace.copyPath') }}</span>
+          </button>
+          <button type="button" class="context-menu-item" @click="copySelectedFilePath('absolute')">
+            <el-icon><CopyDocument /></el-icon>
+            <span>{{ $t('workspace.copyAbsolutePath') }}</span>
+          </button>
+        </div>
+      </main>
+
+      <div
+        v-show="!splitStacked"
+        class="status-splitter"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        :aria-label="t('workspace.resizePanels')"
+        :title="t('workspace.resizePanels')"
+        :aria-valuemin="200"
+        :aria-valuemax="Math.max(200, splitAvailableWidth - 220)"
+        :aria-valuenow="Math.round(statusPanelWidth)"
+        @pointerdown="startPanelResize"
+        @pointermove="movePanelResize"
+        @pointerup="finishPanelResize"
+        @pointercancel="finishPanelResize"
+        @lostpointercapture="finishPanelResize"
+        @dblclick="resetPanelSplit"
+        @keydown="resizePanelsWithKeyboard"
+      ></div>
+
+      <!-- 右侧面板：差异预览 -->
+      <aside class="right-panel">
+        <div class="panel-header">
+          <span class="panel-title">
+            <el-icon><Connection /></el-icon>
+            {{ $t('diff.title') }}
+          </span>
+        </div>
+        <div class="panel-content" :aria-busy="isLoadingDiff">
+          <GlassLoading :active="isLoadingDiff" :label="$t('common.loading')" />
+          <div v-if="!selectedFile" class="empty-diff">
+            <el-icon><Document /></el-icon>
+            <span>{{ $t('diff.selectFile') }}</span>
+          </div>
+          <div v-else-if="isLoadingDiff" class="loading-diff">
+            <el-skeleton :rows="10" />
+          </div>
+          <div v-else-if="diffResult" class="diff-content">
+            <div class="diff-header">
+              <el-tag class="diff-path-tag" type="primary" size="small" :title="selectedFile">{{ selectedFile }}</el-tag>
+              <div class="diff-stats">
+                <el-tag type="success" size="small">+{{ diffStats.added }}</el-tag>
+                <el-tag type="danger" size="small">-{{ diffStats.removed }}</el-tag>
+              </div>
+            </div>
+            <DiffViewer :text="diffResult.diff" compact @stats="diffStats = $event" />
+          </div>
+          <div v-else class="empty-diff">
+            <el-icon><Document /></el-icon>
+            <span>{{ $t('diff.noDiff') }}</span>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { h, ref, computed, nextTick, onBeforeUnmount, onMounted, onActivated, onDeactivated, reactive, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { deleteUnversioned, revealWorkspaceFile, svnCleanup, svnRevert, svnDiff } from '@/api/svn'
+import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index'
+import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
+import { useWorkspace } from '@/composables/useWorkspace'
+import VirtualViewport from '@/components/VirtualViewport.vue'
+import DiffViewer from '@/components/DiffViewer.vue'
+import GlassLoading from '@/components/GlassLoading.vue'
+import { writeClipboardText } from '@/utils/clipboard'
+import { retainedSelection } from '@/utils/statusSelection'
+import { groupChangelistFiles } from '@/utils/changelistGroups'
+import type { SvnStatus, DiffResult } from '@/types'
+
+const { t } = useI18n()
+const router = useRouter()
+const workspaceStore = useWorkspaceStore()
+const { openWorkspace: openWorkspaceDialog, refreshStatus, refreshStatusAfterMutation } = useWorkspace()
+
+const SPLIT_RATIO_KEY = 'orcasvn-file-status-split-ratio'
+const splitContainer = ref<HTMLElement | null>(null)
+const splitContainerWidth = ref(0)
+const resizingPanels = ref(false)
+const splitRatio = ref(readSplitRatio())
+const splitStacked = computed(() => splitContainerWidth.value < 480)
+const splitAvailableWidth = computed(() => Math.max(0, splitContainerWidth.value - 6))
+const statusPanelWidth = computed(() => clampPanelWidth(splitAvailableWidth.value * splitRatio.value))
+let splitObserver: ResizeObserver | null = null
+let splitDrag: { element: HTMLElement; pointerId: number; x: number; width: number } | null = null
+
+function readSplitRatio() {
+  try {
+    const saved = localStorage.getItem(SPLIT_RATIO_KEY)
+    const ratio = saved === null ? NaN : Number(saved)
+    if (Number.isFinite(ratio) && ratio > 0 && ratio < 1) return ratio
+  } catch { /* 无法读取布局设置时使用默认比例。 */ }
+  return 0.42
+}
+
+function clampPanelWidth(width: number) {
+  return Math.max(200, Math.min(width, splitAvailableWidth.value - 220))
+}
+
+function saveSplitRatio() {
+  try { localStorage.setItem(SPLIT_RATIO_KEY, String(splitRatio.value)) }
+  catch { /* 保存布局失败不影响本次拖动。 */ }
+}
+
+function startPanelResize(event: PointerEvent) {
+  if (event.button !== 0 || splitStacked.value || splitDrag) return
+  const element = event.currentTarget as HTMLElement
+  element.setPointerCapture(event.pointerId)
+  splitDrag = { element, pointerId: event.pointerId, x: event.clientX, width: statusPanelWidth.value }
+  resizingPanels.value = true
+  event.preventDefault()
+}
+
+function movePanelResize(event: PointerEvent) {
+  if (!splitDrag || splitDrag.pointerId !== event.pointerId || splitStacked.value) return
+  splitRatio.value = clampPanelWidth(splitDrag.width + event.clientX - splitDrag.x) / splitAvailableWidth.value
+}
+
+function finishPanelResize() {
+  if (!splitDrag) return
+  const drag = splitDrag
+  splitDrag = null
+  resizingPanels.value = false
+  if (drag.element.hasPointerCapture(drag.pointerId)) drag.element.releasePointerCapture(drag.pointerId)
+  saveSplitRatio()
+}
+
+function resetPanelSplit() {
+  finishPanelResize()
+  splitRatio.value = 0.42
+  saveSplitRatio()
+}
+
+function resizePanelsWithKeyboard(event: KeyboardEvent) {
+  if (splitStacked.value) return
+  let width = statusPanelWidth.value
+  if (event.key === 'ArrowLeft') width -= 24
+  else if (event.key === 'ArrowRight') width += 24
+  else if (event.key === 'Home') width = 200
+  else if (event.key === 'End') width = splitAvailableWidth.value - 220
+  else return
+  event.preventDefault()
+  splitRatio.value = clampPanelWidth(width) / splitAvailableWidth.value
+  saveSplitRatio()
+}
+
+function observeSplitContainer() {
+  splitObserver?.disconnect()
+  const element = splitContainer.value
+  if (!element) return
+  const measure = () => {
+    const width = element.clientWidth
+    if (width > 0) splitContainerWidth.value = width
+    if (splitStacked.value) finishPanelResize()
+  }
+  measure()
+  splitObserver = new ResizeObserver(measure)
+  splitObserver.observe(element)
+}
+
+watch(splitContainer, observeSplitContainer, { flush: 'post' })
+onActivated(() => { void nextTick(observeSplitContainer) })
+onDeactivated(() => { finishPanelResize(); splitObserver?.disconnect() })
+onBeforeUnmount(() => { finishPanelResize(); splitObserver?.disconnect() })
+
+const filter = ref<'all' | 'modified' | 'added' | 'conflicted' | 'missing'>('all')
+const selectedFile = ref<string | null>(null)
+const isLoadingDiff = ref(false)
+const diffResult = ref<DiffResult | null>(null)
+let diffRequestGeneration = 0
+let fileActionWorkspaceGeneration = 0
+const pendingFileAction = ref<string | null>(null)
+const fileContextMenu = reactive({
+  visible: false,
+  x: 0,
+  y: 0,
+  file: null as SvnStatus | null,
+})
+const workspaceName = computed(() => {
+  const path = workspaceStore.currentPath || ''
+  return path.split(/[\\/]/).filter(Boolean).pop() || path
+})
+
+const fileViewport = ref<InstanceType<typeof VirtualViewport> | null>(null)
+const fileRowHeight = 48
+const diffStats = ref({ added: 0, removed: 0 })
+
+const filteredFiles = computed(() => {
+  if (filter.value === 'all') return workspaceStore.statusList
+  return workspaceStore.statusList.filter(f => {
+    if (filter.value === 'modified') return ['modified', 'added', 'deleted', 'replaced'].includes(f.status_code)
+    if (filter.value === 'added') return f.status_code === 'unversioned'
+    if (filter.value === 'conflicted') return f.status_code === 'conflicted' || f.prop_status === 'conflicted'
+    if (filter.value === 'missing') return f.status_code === 'missing'
+    return true
+  })
+})
+
+const groupedFiles = computed(() => groupChangelistFiles(filteredFiles.value))
+
+const focusFile = async (index: number) => {
+  const entry = groupedFiles.value.files[index]
+  if (!entry) return
+  void selectFile(entry.file)
+  fileViewport.value?.scrollToIndex(entry.rowIndex)
+  await nextTick()
+  fileViewport.value?.element?.querySelector<HTMLButtonElement>(`.file-item[data-index="${index}"] .file-path`)?.focus()
+}
+
+const setFilter = (f: typeof filter.value) => {
+  filter.value = f
+}
+
+const selectFile = async (file: SvnStatus) => {
+  hideFileContextMenu()
+  selectedFile.value = file.path
+  await loadDiff(file.path)
+}
+
+const loadDiff = async (path: string) => {
+  const workspacePath = workspaceStore.currentPath
+  if (!workspacePath) return
+  const generation = ++diffRequestGeneration
+  const isCurrent = () => generation === diffRequestGeneration
+    && workspaceStore.currentPath === workspacePath
+    && selectedFile.value === path
+  isLoadingDiff.value = true
+  diffResult.value = null
+  try {
+    const result = await svnDiff(workspacePath, path)
+    if (isCurrent()) diffResult.value = result
+  } catch {
+    if (isCurrent()) diffResult.value = null
+  } finally {
+    if (isCurrent()) isLoadingDiff.value = false
+  }
+}
+
+const getStatusLabel = (code: string) => {
+  return t(getStatusLabelKey(code))
+}
+
+const openWorkspace = async () => {
+  try {
+    await openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
+  } catch (error) {
+    ElMessage.error(String(error))
+  }
+}
+
+const closeWorkspace = () => {
+  diffRequestGeneration += 1
+  workspaceStore.clearWorkspace()
+  selectedFile.value = null
+  diffResult.value = null
+  isLoadingDiff.value = false
+}
+
+const doCheckout = () => router.push({ name: 'checkout' })
+
+const doCommit = () => router.push({ name: 'commit' })
+
+const doCleanup = async () => {
+  if (!workspaceStore.currentPath) return
+  try {
+    await svnCleanup(workspaceStore.currentPath)
+    await refreshStatusAfterMutation()
+  } catch (err) {
+    workspaceStore.setError(String(err))
+  }
+}
+
+const viewDiff = (path: string) => {
+  hideFileContextMenu()
+  router.push({ name: 'diff', query: { path } })
+}
+
+const hideFileContextMenu = () => {
+  fileContextMenu.visible = false
+  fileContextMenu.file = null
+}
+
+const openFileContextMenu = (event: MouseEvent, file: SvnStatus) => {
+  selectedFile.value = file.path
+  fileContextMenu.file = file
+  fileContextMenu.x = Math.max(8, Math.min(event.clientX, window.innerWidth - 184))
+  fileContextMenu.y = Math.max(8, Math.min(event.clientY, window.innerHeight - 110))
+  fileContextMenu.visible = true
+  void loadDiff(file.path)
+}
+
+const isAbsolutePath = (path: string) => {
+  return /^[A-Za-z]:[\\/]/.test(path) || path.startsWith('\\\\') || path.startsWith('/')
+}
+
+const joinWorkspacePath = (workspacePath: string, filePath: string) => {
+  if (isAbsolutePath(filePath)) return filePath
+  const separator = workspacePath.includes('\\') ? '\\' : '/'
+  const base = workspacePath.replace(/[\\/]+$/, '')
+  const relative = filePath.replace(/^[\\/]+/, '')
+  return `${base}${separator}${relative}`
+}
+
+const copySelectedFilePath = async (mode: 'relative' | 'absolute') => {
+  const file = fileContextMenu.file
+  if (!file || !workspaceStore.currentPath) return
+
+  const path = mode === 'absolute'
+    ? joinWorkspacePath(workspaceStore.currentPath, file.path)
+    : file.path
+
+  try {
+    await writeClipboardText(path)
+    ElMessage.success(t('workspace.pathCopied'))
+  } catch {
+    ElMessage.error(t('workspace.copyFailed'))
+  } finally {
+    hideFileContextMenu()
+  }
+}
+
+const revealSelectedFile = async () => {
+  const file = fileContextMenu.file
+  if (!file || !workspaceStore.currentPath) return
+
+  try {
+    await revealWorkspaceFile(workspaceStore.currentPath, file.path)
+  } catch (err) {
+    ElMessage.error(`${t('common.error')}: ${err}`)
+  } finally {
+    hideFileContextMenu()
+  }
+}
+
+const handleDocumentKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') hideFileContextMenu()
+}
+
+watch(() => workspaceStore.statusList.map(file => file.path), (paths) => {
+  if (retainedSelection(selectedFile.value, paths) === selectedFile.value) return
+  diffRequestGeneration += 1
+  selectedFile.value = null
+  diffResult.value = null
+  isLoadingDiff.value = false
+})
+
+watch(() => workspaceStore.currentPath, () => {
+  fileActionWorkspaceGeneration += 1
+  diffRequestGeneration += 1
+  selectedFile.value = null
+  diffResult.value = null
+  isLoadingDiff.value = false
+  hideFileContextMenu()
+}, { flush: 'sync' })
+
+onMounted(() => {
+  document.addEventListener('click', hideFileContextMenu)
+  document.addEventListener('contextmenu', hideFileContextMenu)
+  document.addEventListener('scroll', hideFileContextMenu, true)
+  document.addEventListener('keydown', handleDocumentKeydown)
+})
+
+onBeforeUnmount(() => {
+  fileActionWorkspaceGeneration += 1
+  document.removeEventListener('click', hideFileContextMenu)
+  document.removeEventListener('contextmenu', hideFileContextMenu)
+  document.removeEventListener('scroll', hideFileContextMenu, true)
+  document.removeEventListener('keydown', handleDocumentKeydown)
+})
+
+const fileActionLabel = (file: SvnStatus) => t(file.status_code === 'unversioned' ? 'common.delete' : 'common.revert')
+
+const handleFileAction = async (file: SvnStatus) => {
+  hideFileContextMenu()
+  const workspacePath = workspaceStore.currentPath
+  if (!workspacePath || pendingFileAction.value !== null || workspaceStore.statusIsStale) return
+  const path = file.path
+  const statusCode = file.status_code
+  const propStatus = file.prop_status
+  const isUnversioned = statusCode === 'unversioned'
+  const generation = fileActionWorkspaceGeneration
+  const isCurrent = () => generation === fileActionWorkspaceGeneration && workspaceStore.currentPath === workspacePath
+  pendingFileAction.value = path
+  try {
+    try {
+      await ElMessageBox.confirm(
+        h('div', [
+          h('p', t(isUnversioned ? 'workspace.deleteUnversionedConfirm' : 'workspace.revertFileConfirm')),
+          h('code', { class: 'workspace-file-confirm__path' }, joinWorkspacePath(workspacePath, path)),
+        ]),
+        t(isUnversioned ? 'common.delete' : 'common.revert'),
+        {
+          type: 'warning',
+          customClass: 'workspace-file-confirm',
+          confirmButtonText: t(isUnversioned ? 'common.delete' : 'common.revert'),
+          confirmButtonType: 'danger',
+          cancelButtonText: t('common.cancel'),
+          closeOnClickModal: false,
+          autofocus: false,
+          distinguishCancelAndClose: true,
+        },
+      )
+    } catch (action) {
+      if (action === 'cancel' || action === 'close') return
+      throw action
+    }
+    if (!isCurrent() || workspaceStore.statusIsStale) return
+    // A background refresh can remove the target or change its SVN state while
+    // the dialog is open. Such a target requires a new confirmation.
+    const currentFile = workspaceStore.statusList.find(entry => entry.path === path)
+    if (!currentFile || currentFile.status_code !== statusCode || currentFile.prop_status !== propStatus) return
+    if (isUnversioned) await deleteUnversioned(workspacePath, [path])
+    else await svnRevert(workspacePath, [path])
+    if (!isCurrent()) return
+    await refreshStatusAfterMutation()
+    if (isCurrent() && selectedFile.value === path) {
+      diffRequestGeneration += 1
+      selectedFile.value = null
+      diffResult.value = null
+      isLoadingDiff.value = false
+    }
+  } catch (err) {
+    if (isCurrent()) workspaceStore.setError(String(err))
+  } finally {
+    pendingFileAction.value = null
+  }
+}
+
+</script>
+
+<style scoped>
+.workspace-view {
+  height: 100%;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+}
+
+.empty-content {
+  text-align: center;
+  max-width: 480px;
+}
+
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  margin: 0 auto 24px;
+  border-radius: var(--app-radius-md);
+  background: linear-gradient(135deg, var(--md-sys-color-primary-container), var(--md-sys-color-secondary-container));
+  color: var(--md-sys-color-primary);
+  font-size: 36px;
+}
+
+.empty-content h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.empty-content p {
+  margin: 0 0 24px;
+  color: var(--el-text-color-secondary);
+}
+
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+/* 三栏布局 */
+.workspace-layout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 面板通用样式 */
+.left-panel,
+.center-panel,
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.left-panel {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--md-sys-color-surface);
+}
+
+.center-panel {
+  flex: 1;
+  min-width: 0;
+  background: var(--md-sys-color-surface);
+  position: relative;
+}
+
+.right-panel {
+  width: 400px;
+  flex-shrink: 0;
+  border-right: none;
+  background: var(--md-sys-color-surface-dim);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--md-sys-color-surface-container);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  flex-shrink: 0;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--app-font-size-sm);
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+
+.panel-title .el-icon {
+  font-size: var(--app-font-size-body);
+}
+
+.panel-content {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 12px;
+}
+
+.panel-section {
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* 左侧信息面板 */
+.info-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.info-label {
+  font-size: var(--app-font-size-xs);
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.info-value {
+  font-size: var(--app-font-size-label);
+  color: var(--el-text-color-primary);
+  word-break: break-all;
+}
+
+.path-text {
+  font-family: var(--app-font-family-mono);
+  font-size: var(--app-font-size-sm);
+}
+
+.url-text {
+  color: var(--md-sys-color-primary);
+  font-size: var(--app-font-size-sm);
+}
+
+.no-info {
+  text-align: center;
+  color: var(--el-text-color-secondary);
+  padding: 20px 0;
+}
+
+/* 快速操作 */
+.quick-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+
+.quick-actions .el-button {
+  justify-content: flex-start;
+}
+
+/* 状态统计 */
+.status-summary {
+  display: flex;
+  padding: 8px 12px;
+  gap: 8px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  flex-shrink: 0;
+}
+
+.status-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--app-radius-full);
+  background: var(--el-fill-color-light);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color var(--app-transition-fast), background-color var(--app-transition-fast), border-color var(--app-transition-fast);
+  font-size: var(--app-font-size-sm);
+}
+
+.status-badge:hover {
+  background: var(--el-fill-color);
+}
+
+.status-badge.active {
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-primary);
+}
+
+.badge-count {
+  font-weight: 700;
+}
+
+.badge-label {
+  color: var(--el-text-color-secondary);
+}
+
+.status-badge.modified .badge-count {
+  color: var(--app-color-status-modified-text);
+}
+
+.status-badge.unversioned .badge-count {
+  color: var(--app-color-status-unversioned-text);
+}
+
+.status-badge.deleted .badge-count {
+  color: var(--app-color-status-error-text);
+}
+
+.status-badge.conflicted .badge-count,
+.status-badge.missing .badge-count {
+  color: var(--app-color-status-error-text);
+}
+
+.cached-status-notice {
+  padding: 8px 12px;
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container);
+  font-size: var(--app-font-size-sm);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+/* 文件列表 */
+.file-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.loading-files {
+  padding: 16px 12px;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  cursor: pointer;
+  transition: background var(--app-transition-fast);
+}
+
+.file-item:hover {
+  background: var(--el-fill-color-lighter);
+}
+
+.file-item.selected {
+  background: var(--md-sys-color-primary-container);
+}
+
+.file-item:focus-within .file-actions {
+  opacity: 1;
+}
+
+.file-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--app-radius-xs);
+  font-size: var(--app-font-size-2xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.file-status.status-modified,
+.file-status.status-replaced {
+  background: var(--app-color-status-modified-bg);
+  color: var(--app-color-status-modified-text);
+}
+
+.file-status.status-added {
+  background: var(--app-color-status-added-bg);
+  color: var(--app-color-status-added-text);
+}
+
+.file-status.status-deleted,
+.file-status.status-missing,
+.file-status.status-conflicted,
+.file-status.status-obstructed {
+  background: var(--app-color-status-error-bg);
+  color: var(--app-color-status-error-text);
+}
+
+.file-status.status-unversioned {
+  background: var(--app-color-status-unversioned-bg);
+  color: var(--app-color-status-unversioned-text);
+}
+
+.file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--app-font-size-label);
+  font-family: var(--app-font-family-mono);
+  cursor: pointer;
+}
+
+.file-actions {
+  display: flex;
+  gap: 2px;
+  opacity: .45;
+  transition:
+    opacity var(--app-transition-fast),
+    transform var(--app-transition-fast);
+}
+
+.file-actions :deep(.el-button) {
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  background: var(--el-fill-color-light);
+}
+
+.file-actions :deep(.el-button:hover) {
+  border-color: var(--md-sys-color-outline-variant);
+  background: var(--el-fill-color);
+}
+
+.file-actions :deep(.el-button.el-button--danger:hover) {
+  color: var(--md-sys-color-on-error);
+  border-color: var(--md-sys-color-error);
+  background: var(--md-sys-color-error);
+}
+
+.file-action-trigger {
+  display: inline-flex;
+}
+
+.file-item:hover .file-actions {
+  opacity: 1;
+  transform: translateX(-1px);
+}
+
+.empty-files {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px;
+  color: var(--el-text-color-secondary);
+}
+
+.empty-files .el-icon {
+  font-size: 32px;
+}
+
+.file-context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 168px;
+  padding: 4px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--app-radius-sm);
+  background: var(--md-sys-color-surface-container);
+  box-shadow: var(--app-shadow-floating);
+}
+
+.context-menu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 30px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--app-radius-xs);
+  background: transparent;
+  color: var(--el-text-color-primary);
+  cursor: pointer;
+  font-size: var(--app-font-size-label);
+  text-align: left;
+}
+
+.context-menu-item:hover {
+  background: var(--el-fill-color);
+}
+
+.context-menu-item .el-icon {
+  color: var(--el-text-color-secondary);
+}
+
+/* 差异预览 */
+.empty-diff,
+.loading-diff {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  color: var(--el-text-color-secondary);
+}
+
+.empty-diff .el-icon {
+  font-size: 48px;
+}
+
+.diff-content {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.diff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  flex-shrink: 0;
+}
+
+.diff-stats {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.diff-path-tag {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.diff-path-tag :deep(.el-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 响应式 */
+@media (max-width: 1200px) {
+  .right-panel {
+    width: 320px;
+  }
+}
+
+@media (max-width: 860px) {
+  .left-panel {
+    display: none;
+  }
+  
+  .right-panel {
+    display: flex;
+  }
+}
+.changelist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-low);
+  font-size: var(--app-font-size-label);
+  font-weight: 600;
+}
+.changelist-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.changelist-name .el-icon { margin-right: 6px; vertical-align: middle; }
+.changelist-count { flex-shrink: 0; font-variant-numeric: tabular-nums; }
+</style>
+
+<style scoped>
+/* Fork-like workspace layout overrides */
+.empty-state {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.welcome-sidebar,
+.left-panel {
+  width: 210px;
+  background: var(--md-sys-color-surface-container-low);
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.empty-content {
+  align-self: start;
+  max-width: 680px;
+  margin: var(--app-spacing-xl);
+  min-width: 0;
+  padding: 48px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--app-radius-xl);
+  background: var(--md-sys-color-surface-container-low);
+  text-align: left;
+}
+
+.welcome-mark {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 28px;
+  border-radius: 18px;
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+  font-size: var(--app-font-size-display);
+}
+
+.welcome-eyebrow {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--md-sys-color-primary);
+  font-size: var(--app-font-size-sm);
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+
+.empty-content h2 {
+  margin-bottom: 12px;
+  font-size: clamp(24px, 3vw, var(--app-font-size-display));
+  font-weight: var(--app-font-weight-bold);
+  letter-spacing: -.025em;
+}
+
+.empty-content p {
+  margin-bottom: 28px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--app-font-size-body);
+  line-height: var(--app-line-height-relaxed);
+}
+
+.empty-actions {
+  justify-content: flex-start;
+}
+
+.empty-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.workspace-layout {
+  gap: 0;
+  padding: 0;
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.left-panel {
+  flex-shrink: 0;
+}
+
+.repository-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 37px;
+  padding: 0 9px 0 12px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--app-font-size-sm);
+}
+
+.repository-name button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.repository-name button:hover,
+.sidebar-row:hover {
+  background: var(--md-sys-state-hover);
+}
+
+.sidebar-section {
+  padding: 8px 6px 3px;
+}
+
+.sidebar-heading {
+  padding: 3px 7px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+
+.sidebar-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 25px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--app-font-size-label);
+  text-align: left;
+}
+
+.sidebar-row.active {
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+}
+
+.sidebar-row span {
+  flex: 1;
+}
+
+.sidebar-row b {
+  font-size: var(--app-font-size-2xs);
+}
+
+.repository-meta {
+  margin: 10px 12px;
+  padding-top: 8px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.repository-meta div {
+  margin-bottom: 9px;
+}
+
+.repository-meta span,
+.repository-meta strong {
+  display: block;
+}
+
+.repository-meta span {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.repository-meta strong {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--app-font-size-2xs);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-actions {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding: 9px;
+  border-top: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.sidebar-actions button {
+  display: flex;
+  align-items: center;
+  height: 27px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--md-sys-color-outline);
+  border-radius: var(--app-radius-sm);
+  background: var(--md-sys-color-surface-container-low);
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: var(--app-font-size-label);
+}
+
+.center-panel,
+.right-panel {
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.center-panel {
+  flex: 0 0 var(--status-panel-width, 42%);
+  width: var(--status-panel-width, 42%);
+  min-width: 0;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.right-panel {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+.panel-header {
+  height: var(--app-size-panel-header);
+  padding: 0 18px;
+  background: var(--md-sys-color-surface-container-lowest);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.panel-title {
+  color: var(--md-sys-color-on-surface);
+  font-size: var(--app-font-size-body);
+  font-weight: var(--app-font-weight-bold);
+}
+
+.status-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 16px;
+  background: var(--md-sys-color-surface-container-lowest);
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.status-badge {
+  justify-content: center;
+  width: auto;
+  min-width: 0;
+  gap: 6px;
+  min-height: var(--app-size-control-sm);
+  padding: 3px 10px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--app-radius-sm);
+  background: var(--md-sys-color-surface-container-low);
+  font-size: var(--app-font-size-sm);
+}
+
+.status-badge.active {
+  border-color: var(--md-sys-color-primary);
+  background: var(--md-sys-color-primary-container);
+  color: var(--md-sys-color-on-primary-container);
+}
+
+.file-item {
+  min-height: var(--app-size-list-row);
+  gap: 10px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+
+.file-item.selected {
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+}
+
+.file-status {
+  min-width: 20px;
+  height: 21px;
+  padding: 0 6px;
+  font-size: var(--app-font-size-2xs);
+}
+
+.file-path {
+  font-size: var(--app-font-size-label);
+}
+
+.file-actions {
+  opacity: .7;
+}
+
+.file-actions :deep(.el-button) {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+
+.diff-header {
+  min-height: 40px;
+  padding: 5px 10px;
+  background: var(--md-sys-color-surface-container-low);
+}
+
+:global(.theme-dark) .workspace-layout,
+:global(.dark) .workspace-layout {
+  background: var(--md-sys-color-surface-dim);
+}
+
+:global(.theme-dark) .center-panel,
+:global(.theme-dark) .right-panel,
+:global(.dark) .center-panel,
+:global(.dark) .right-panel {
+  background: var(--md-sys-color-surface-container-lowest) !important;
+}
+
+:global(.theme-dark) .right-panel,
+:global(.dark) .right-panel {
+  border-left-color: rgba(115, 115, 115, .18) !important;
+}
+
+:global(.theme-dark) .panel-header,
+:global(.theme-dark) .diff-header,
+:global(.dark) .panel-header,
+:global(.dark) .diff-header {
+  background: var(--md-sys-color-surface-container) !important;
+  border-color: rgba(115, 115, 115, .16) !important;
+}
+
+:global(.theme-dark) .panel-title,
+:global(.dark) .panel-title {
+  color: var(--md-sys-color-on-surface) !important;
+}
+
+:global(.theme-dark) .status-summary,
+:global(.dark) .status-summary {
+  background: var(--md-sys-color-surface-container-lowest) !important;
+  border-color: rgba(115, 115, 115, .14) !important;
+}
+
+:global(.theme-dark) .status-badge,
+:global(.dark) .status-badge {
+  color: var(--md-sys-color-on-surface-variant);
+  border-color: var(--md-sys-color-outline-variant);
+  background: var(--md-sys-color-surface-container-low) !important;
+}
+
+:global(.theme-dark) .status-badge:hover,
+:global(.dark) .status-badge:hover {
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high) !important;
+}
+
+:global(.theme-dark) .status-badge.active,
+:global(.dark) .status-badge.active {
+  color: var(--md-sys-color-on-primary-container) !important;
+  border-color: var(--md-sys-color-primary) !important;
+  background: var(--md-sys-color-primary-container) !important;
+}
+
+:global(.theme-dark) .status-badge.active .badge-label,
+:global(.dark) .status-badge.active .badge-label {
+  color: var(--md-sys-color-on-primary-container) !important;
+}
+
+:global(.theme-dark) .file-list,
+:global(.dark) .file-list {
+  background: var(--md-sys-color-surface-container-lowest);
+}
+
+:global(.theme-dark) .file-item,
+:global(.dark) .file-item {
+  color: var(--md-sys-color-on-surface-variant) !important;
+  background: var(--md-sys-color-surface-container-lowest) !important;
+  border-bottom-color: rgba(115, 115, 115, .12) !important;
+}
+
+:global(.theme-dark) .file-item:hover,
+:global(.dark) .file-item:hover {
+  color: var(--md-sys-color-on-surface) !important;
+  background: var(--md-sys-color-surface-container-high) !important;
+}
+
+:global(.theme-dark) .file-item.selected,
+:global(.dark) .file-item.selected {
+  color: var(--md-sys-color-on-primary-container) !important;
+  background: var(--md-sys-color-primary-container) !important;
+}
+
+:global(.theme-dark) .file-actions :deep(.el-button),
+:global(.dark) .file-actions :deep(.el-button) {
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container);
+  border-color: rgba(115, 115, 115, .16);
+}
+
+:global(.theme-dark) .file-actions :deep(.el-button:hover),
+:global(.dark) .file-actions :deep(.el-button:hover) {
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-highest);
+  border-color: rgba(143, 160, 174, .28);
+}
+
+:global(.theme-dark) .empty-diff,
+:global(.theme-dark) .empty-files,
+:global(.dark) .empty-diff,
+:global(.dark) .empty-files {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+:global(.theme-dark) .empty-diff .el-icon,
+:global(.theme-dark) .empty-files .el-icon,
+:global(.dark) .empty-diff .el-icon,
+:global(.dark) .empty-files .el-icon {
+  color: var(--md-sys-color-outline);
+}
+
+:global(.theme-dark) .file-context-menu,
+:global(.dark) .file-context-menu {
+  border-color: rgba(115, 115, 115, .2);
+  background: var(--md-sys-color-surface-container);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .34);
+}
+
+:global(.theme-dark) .context-menu-item,
+:global(.dark) .context-menu-item {
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+:global(.theme-dark) .context-menu-item:hover,
+:global(.dark) .context-menu-item:hover {
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-surface-container-high);
+}
+
+@media (max-width: 860px) {
+  .empty-state {
+    grid-template-columns: 1fr;
+  }
+  .welcome-sidebar {
+    display: none;
+  }
+}
+
+@media (max-width: 650px) {
+  .empty-content {
+    margin: var(--app-spacing-md);
+    padding: var(--app-spacing-lg);
+  }
+}
+
+.status-splitter {
+  flex: 0 0 6px;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--md-sys-color-surface-container-low);
+  border-inline: 1px solid var(--md-sys-color-outline-variant);
+  box-sizing: border-box;
+}
+.status-splitter:hover,
+.status-splitter:focus-visible,
+.is-resizing > .status-splitter {
+  background: var(--md-sys-color-primary);
+  outline: none;
+}
+.workspace-layout.is-resizing,
+.workspace-layout.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+.workspace-layout.is-stacked {
+  flex-direction: column;
+  overflow-y: auto;
+}
+.is-stacked > .center-panel {
+  flex: 0 0 300px;
+  min-height: 300px;
+  width: 100%;
+  border-right: 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.is-stacked > .right-panel {
+  flex: 1 0 320px;
+  min-height: 320px;
+  width: 100%;
+}
+
+</style>

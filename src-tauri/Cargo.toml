@@ -1,0 +1,31 @@
+[package]
+name = "OrcaSVN"
+version = "0.6.6"
+description = "OrcaSVN 客户端"
+authors = [""]
+license = "MIT"
+repository = ""
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "time", "process", "sync"] }
+thiserror = "2"
+quick-xml = "0.37"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+base64 = "0.22"
+chrono = "0.4"
+serde_json = "1"
+
+[target.'cfg(windows)'.dependencies]
+sha2 = "0.10"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Registry", "Win32_System_WindowsProgramming", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }

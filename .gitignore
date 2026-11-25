@@ -1,0 +1,44 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Rust build output
+target/
+
+# 本机生成的最新发布包及发布暂存目录
+/release/
+/.release-stage-*/
+/.release-previous-*/
+
+# Git 操作日志仅保留在本机，避免提交个人操作记录。
+/git_action_log_*.txt
+
+# Tauri
+src-tauri/dist
+/src-tauri/runtime/
+
+build-output.txt
+
+.minimax
+.reasonix
